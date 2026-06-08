@@ -291,9 +291,7 @@ body.dm-reimagined [class*="ai-viewport"] {
   transform: scale(0.94);
 }
 
-.dm-navbar__menu-btn {
-  display: none; /* visible on mobile */
-}
+
 
 .dm-icon {
   display: flex;
@@ -302,68 +300,7 @@ body.dm-reimagined [class*="ai-viewport"] {
   pointer-events: none;
 }
 
-/* Mobile dropdown nav */
-.dm-mobile-nav {
-  position: fixed;
-  top: var(--dm-navbar-h);
-  left: 0;
-  right: 0;
-  z-index: 999;
-  background: var(--dm-glass-bg);
-  backdrop-filter: var(--dm-glass-blur);
-  -webkit-backdrop-filter: var(--dm-glass-blur);
-  border-bottom: var(--dm-glass-border);
-  padding: 12px 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  transform: translateY(-100%);
-  opacity: 0;
-  pointer-events: none;
-  transition: transform var(--dm-t-base) var(--dm-ease),
-              opacity var(--dm-t-base) var(--dm-ease);
-}
 
-.dm-mobile-nav--open {
-  transform: translateY(0);
-  opacity: 1;
-  pointer-events: all;
-}
-
-.dm-mobile-nav__link {
-  display: block;
-  padding: 7px 14px;
-  border-radius: var(--dm-r-full);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--dm-border);
-  color: var(--dm-text-secondary);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  transition: color var(--dm-t-fast), background var(--dm-t-fast);
-}
-
-.dm-mobile-nav__link:hover {
-  color: var(--dm-text-primary);
-  background: rgba(255, 255, 255, 0.10);
-}
-
-.dm-mobile-nav__link--all {
-  background: var(--dm-accent-grad) !important;
-  color: #fff !important;
-  border-color: transparent !important;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  box-shadow: 0 2px 8px var(--dm-accent-glow);
-}
-
-.dm-mobile-nav__link--active {
-  color: #fff !important;
-  background: rgba(232, 69, 69, 0.15) !important;
-  border-color: rgba(232, 69, 69, 0.3) !important;
-}
 
 /* ── 6. Categories Dropdown Menu ────────────────────────────── */
 .dm-dropdown {
@@ -1168,9 +1105,7 @@ body.dm-reimagined ::-webkit-scrollbar-thumb:hover {
     display: none;
   }
 
-  .dm-navbar__menu-btn {
-    display: flex;
-  }
+
 
   .dm-main {
     padding-top: calc(var(--dm-navbar-h) + var(--dm-catbar-h) + 20px);

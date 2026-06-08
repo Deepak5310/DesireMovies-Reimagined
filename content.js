@@ -696,41 +696,13 @@
       searchForm.appendChild(searchSubmit);
       right.appendChild(searchForm);
 
-      const mobileMenu = el("button", {
-        className: "dm-navbar__btn dm-navbar__menu-btn",
-        id: "dm-mobile-menu-btn",
-        type: "button",
-        title: "Menu",
-      });
-      mobileMenu.appendChild(svgIcon("menu"));
-      right.appendChild(mobileMenu);
+
 
       nav.appendChild(left);
       nav.appendChild(center);
       nav.appendChild(right);
 
-      const mobileNav = el("div", {
-        className: "dm-mobile-nav",
-        id: "dm-mobile-nav",
-      });
 
-
-
-      navLinks.forEach((link) => {
-        const a = el("a", {
-          href: link.href,
-          className: "dm-mobile-nav__link",
-          textContent: link.text,
-        });
-        if (
-          window.location.href === link.href ||
-          window.location.href.startsWith(link.href)
-        ) {
-          a.classList.add("dm-mobile-nav__link--active");
-        }
-        mobileNav.appendChild(a);
-      });
-      nav.appendChild(mobileNav);
 
       return nav;
     },
@@ -1398,14 +1370,7 @@
       document.body.classList.remove("dm-loading");
       document.body.classList.add("dm-reimagined");
 
-      const menuBtn = document.querySelector("#dm-mobile-menu-btn");
-      const mobileNav = document.querySelector("#dm-mobile-nav");
-      if (menuBtn && mobileNav) {
-        menuBtn.addEventListener("click", () => {
-          mobileNav.classList.toggle("dm-mobile-nav--open");
-          menuBtn.classList.toggle("dm-navbar__btn--active");
-        });
-      }
+
     },
 
     hideSinglePageContent() {
@@ -1474,7 +1439,7 @@
     document.body.classList.remove("dm-loading");
     document.body.classList.add("dm-reimagined");
 
-    initMobileMenu();
+
     initLoadMore();
     suppressAds();
     animateCardsIn();
@@ -1552,30 +1517,7 @@
     }
   }
 
-  function initMobileMenu() {
-    const btn = document.querySelector("#dm-mobile-menu-btn");
-    const mobileNav = document.querySelector("#dm-mobile-nav");
-    if (!btn || !mobileNav) return;
 
-    btn.addEventListener("click", () => {
-      const isOpen = mobileNav.classList.toggle("dm-mobile-nav--open");
-      btn.classList.toggle("dm-navbar__btn--active", isOpen);
-    });
-
-    mobileNav.querySelectorAll("a").forEach((a) => {
-      a.addEventListener("click", () => {
-        mobileNav.classList.remove("dm-mobile-nav--open");
-        btn.classList.remove("dm-navbar__btn--active");
-      });
-    });
-
-    document.addEventListener("click", (e) => {
-      if (!btn.contains(e.target) && !mobileNav.contains(e.target)) {
-        mobileNav.classList.remove("dm-mobile-nav--open");
-        btn.classList.remove("dm-navbar__btn--active");
-      }
-    });
-  }
 
   function initLoadMore() {
     const btn = document.querySelector("#dm-load-more");
