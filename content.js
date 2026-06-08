@@ -1377,69 +1377,64 @@
     async init() {
       const data = this.extractSinglePost();
 
-      // Fetch correct IMDb rating from OMDb API / IMDb suggestions
+      // Fetch correct IMDb rating using IMDb Suggestions + Ratings APIs
       if (data.parsed && data.parsed.cleanTitle) {
         try {
           const queryTitle = data.parsed.cleanTitle;
           const queryYear = data.parsed.year || "";
+          const targetYear = queryYear ? parseInt(queryYear) : null;
           let imdbRating = null;
 
-          // 1. Try direct OMDb search by title and year
-          const apiUrl = `https://www.omdbapi.com/?apikey=thewdb&t=${encodeURIComponent(queryTitle)}&y=${queryYear}`;
-          const responseData = await bgFetch(apiUrl);
-          let movieData = JSON.parse(responseData.text);
+          // Step 1: Use IMDb's JSONP suggestion endpoint to find the correct IMDb ID.
+          // Query format: sg.media-imdb.com/suggests/{first_letter}/{title}.json
+          const firstChar = queryTitle.trim().charAt(0).toLowerCase();
+          const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(queryTitle.trim().toLowerCase())}.json`;
+          const suggestRes = await bgFetch(suggestUrl);
 
-          // 2. If direct title + year search fails, try suggestions API as fallback
-          if (!movieData || movieData.Response === "False") {
-            const firstChar = queryTitle.trim().charAt(0).toLowerCase();
-            if (firstChar) {
-              const suggestUrl = `https://v3.sg.media-imdb.com/suggestion/${firstChar}/${encodeURIComponent(queryTitle.trim().toLowerCase())}.json`;
-              const suggestRes = await bgFetch(suggestUrl);
-              const suggestData = JSON.parse(suggestRes.text);
-              if (suggestData && suggestData.d && suggestData.d.length > 0) {
-                const queryTitleLower = queryTitle.toLowerCase();
-                const targetYear = queryYear ? parseInt(queryYear) : null;
-                
-                // Find best candidate
-                let bestMatch = suggestData.d.find(item => {
-                  if (!item.id || !item.l) return false;
-                  const titleMatch = item.l.toLowerCase() === queryTitleLower;
-                  if (!titleMatch) return false;
-                  if (targetYear && item.y) {
-                    return Math.abs(item.y - targetYear) <= 1;
-                  }
-                  return true;
-                });
+          // The response is JSONP: imdb$bandar({...})
+          const jsonpText = suggestRes.text;
+          const jsonpMatch = jsonpText.match(/^[^(]+\((.+)\)$/s);
+          let imdbId = null;
 
-                if (!bestMatch) {
-                  bestMatch = suggestData.d.find(item => {
-                    if (!item.id || !item.l) return false;
-                    return item.l.toLowerCase() === queryTitleLower;
-                  });
-                }
+          if (jsonpMatch) {
+            const suggestData = JSON.parse(jsonpMatch[1]);
+            if (suggestData && suggestData.d && suggestData.d.length > 0) {
+              const queryTitleLower = queryTitle.toLowerCase();
 
-                if (!bestMatch) {
-                  bestMatch = suggestData.d.find(item => {
-                    if (!item.id || !item.l) return false;
-                    return item.l.toLowerCase().includes(queryTitleLower) && 
-                           (item.qid === "movie" || item.qid === "tvSeries" || item.qid === "tvMiniSeries");
-                  });
-                }
+              // Find the best title match (exact name + year within ±1)
+              let best = suggestData.d.find(item =>
+                item.id && item.id.startsWith("tt") && item.l &&
+                item.l.toLowerCase() === queryTitleLower &&
+                (!targetYear || !item.y || Math.abs(item.y - targetYear) <= 1)
+              );
+              // Fallback: any exact title match
+              if (!best) best = suggestData.d.find(item =>
+                item.id && item.id.startsWith("tt") && item.l &&
+                item.l.toLowerCase() === queryTitleLower
+              );
+              // Fallback: first movie/series result
+              if (!best) best = suggestData.d.find(item =>
+                item.id && item.id.startsWith("tt") &&
+                (item.qid === "movie" || item.qid === "tvSeries" || item.qid === "tvMiniSeries")
+              );
 
-                if (bestMatch && bestMatch.id) {
-                  // Fetch from OMDb by IMDb ID
-                  const idApiUrl = `https://www.omdbapi.com/?apikey=thewdb&i=${bestMatch.id}`;
-                  const idResponse = await bgFetch(idApiUrl);
-                  movieData = JSON.parse(idResponse.text);
-                }
-              }
+              if (best) imdbId = best.id;
             }
           }
 
-          if (movieData && movieData.Response === "True" && movieData.imdbRating && movieData.imdbRating !== "N/A") {
-            imdbRating = `${movieData.imdbRating}/10`;
+          // Step 2: Fetch the real IMDb rating from the official ratings JSON endpoint
+          if (imdbId) {
+            const ratingsUrl = `https://p.media-imdb.com/static-content/documents/v1/title/${imdbId}/ratings%3Fjsonp=imdb.rating.run:imdb.api.title.ratings/data.json`;
+            const ratingsRes = await bgFetch(ratingsUrl);
+            const ratingsMatch = ratingsRes.text.match(/imdb\.rating\.run\((.+)\)/);
+            if (ratingsMatch) {
+              const ratingData = JSON.parse(ratingsMatch[1]);
+              const rating = ratingData?.resource?.rating;
+              if (rating) imdbRating = `${parseFloat(rating).toFixed(1)}/10`;
+            }
           }
 
+          // Step 3: Update the releaseInfo grid with the fetched rating
           const imdbIndex = data.releaseInfo.findIndex((info) => info.key === "IMDb");
           if (imdbRating) {
             if (imdbIndex !== -1) {
@@ -1448,13 +1443,14 @@
               data.releaseInfo.push({ key: "IMDb", value: imdbRating });
             }
           } else {
-            // Remove incorrect or empty IMDb field if OMDb/IMDb lookup has no rating
-            if (imdbIndex !== -1) {
-              data.releaseInfo.splice(imdbIndex, 1);
-            }
+            // No rating found — remove the empty/incorrect IMDb row entirely
+            if (imdbIndex !== -1) data.releaseInfo.splice(imdbIndex, 1);
           }
         } catch (err) {
-          console.warn("[DM Reimagined] Failed to fetch correct IMDb rating:", err);
+          console.warn("[DM Reimagined] IMDb rating fetch failed:", err);
+          // On error, remove any garbage IMDb entry from the page
+          const imdbIndex = data.releaseInfo.findIndex((info) => info.key === "IMDb");
+          if (imdbIndex !== -1) data.releaseInfo.splice(imdbIndex, 1);
         }
       }
 

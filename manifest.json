@@ -23,8 +23,8 @@
   },
   "host_permissions": [
     "https://1desiremovies.top/*",
-    "https://v3.sg.media-imdb.com/*",
-    "https://www.omdbapi.com/*"
+    "https://sg.media-imdb.com/*",
+    "https://p.media-imdb.com/*"
   ],
   "content_scripts": [
     {
