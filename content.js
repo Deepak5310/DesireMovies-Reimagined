@@ -34,12 +34,7 @@
   function svgIcon(name) {
     const icons = {
       search: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
-      home: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
-      menu: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>`,
-      close: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
       film: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" x2="7" y1="2" y2="22"/><line x1="17" x2="17" y1="2" y2="22"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="2" x2="7" y1="7" y2="7"/><line x1="17" x2="22" y1="7" y2="7"/><line x1="17" x2="22" y1="17" y2="17"/><line x1="2" x2="7" y1="17" y2="17"/></svg>`,
-      chevron: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`,
-      spark: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5z"/></svg>`,
     };
     const wrapper = document.createElement("span");
     wrapper.className = "dm-icon";
@@ -1365,31 +1360,11 @@
     async init() {
       const data = this.extractSinglePost();
       const navLinks = DMParser.extractNavLinks();
-
-      this.hideSinglePageContent();
-
       const app = this.buildDetailPage(data, navLinks);
       document.body.appendChild(app);
-      document.body.classList.remove("dm-loading");
-      document.body.classList.add("dm-reimagined");
-
-
     },
 
-    hideSinglePageContent() {
-      document.body.classList.add("dm-loading");
-      const HIDE = "display:none!important;visibility:hidden!important;";
-      for (const child of document.body.children) {
-        if (
-          ["SCRIPT", "STYLE", "LINK", "META", "NOSCRIPT"].includes(
-            child.tagName,
-          )
-        )
-          continue;
-        if (child.id === "dm-app") continue;
-        child.style.cssText = HIDE;
-      }
-    },
+
   };
 
   // ── 5. Main Orchestration ──
@@ -1422,7 +1397,6 @@
         .querySelector("h1, .archive-title, .category-title, .page-title")
         ?.textContent?.trim() || "";
 
-    hideOriginalContent();
     const skeleton = DMRenderer.buildSkeletonGrid(12);
     document.body.appendChild(skeleton);
 
@@ -1439,86 +1413,11 @@
     });
     document.body.appendChild(app);
 
-    document.body.classList.remove("dm-loading");
-    document.body.classList.add("dm-reimagined");
-
-
     initLoadMore();
-    suppressAds();
     animateCardsIn();
   }
 
-  function hideOriginalContent() {
-    document.body.classList.add("dm-loading");
-    const toHide = [
-      "#mh-header",
-      ".mh-header-inner",
-      "#mh-navigation",
-      ".mh-navigation",
-      ".mh-main-nav-search",
-      "#mh-content-row",
-      ".mh-content-row",
-      "#mh-sidebar",
-      ".mh-sidebar",
-      "#mh-content",
-      ".mh-content-main",
-      "#mh-footer",
-      ".mh-footer",
-      ".mh-paging",
-      "#masthead",
-      "#site-header",
-      "#primary-menu",
-      "#content",
-      "#primary",
-      "#secondary",
-      "#colophon",
-      ".site-header",
-      ".site-footer",
-      ".navigation",
-      ".main-navigation",
-      ".mh-container-outer",
-      ".mh-container",
-    ];
-    const HIDE =
-      "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;height:0!important;overflow:hidden!important;";
-    for (const sel of toHide) {
-      document.querySelectorAll(sel).forEach((el) => {
-        el.style.cssText = HIDE;
-      });
-    }
-    for (const child of document.body.children) {
-      if (
-        ["SCRIPT", "STYLE", "LINK", "META", "NOSCRIPT"].includes(child.tagName)
-      )
-        continue;
-      if (child.id === "dm-app" || child.classList.contains("dm-grid-section"))
-        continue;
-      child.style.cssText = HIDE;
-    }
-    suppressAds();
-  }
 
-  function suppressAds() {
-    const adSelectors = [
-      ".ai-viewports",
-      "ins",
-      ".adsbygoogle",
-      '[id*="google_ads"]',
-      '[class*="ad-slot"]',
-      '[class*="ad-wrap"]',
-      '[id*="AdSense"]',
-      ".mh-ads",
-      "[data-ad]",
-      'iframe[src*="ads"]',
-      'iframe[src*="doubleclick"]',
-      'iframe[src*="googlesyndication"]',
-    ];
-    for (const sel of adSelectors) {
-      document.querySelectorAll(sel).forEach((el) => {
-        el.style.cssText = "display:none!important";
-      });
-    }
-  }
 
 
 

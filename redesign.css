@@ -79,8 +79,7 @@ html.dm-extension-active > body > *:not(#dm-app):not(.dm-grid-section):not(style
 }
 
 /* ── 3. Global Reset ───────────────────────────────────────── */
-body.dm-reimagined,
-body.dm-loading {
+html.dm-extension-active body {
   margin: 0 !important;
   padding: 0 !important;
   background: var(--dm-bg-base) !important;
@@ -93,43 +92,22 @@ body.dm-loading {
   overflow-x: hidden !important;
 }
 
-/* Hide ALL original WP layout elements when redesign is active */
-body.dm-reimagined > *:not(#dm-app):not(#dm-search-overlay):not(style):not(script) {
-  display: none !important;
-}
-
-/* Hide original content during skeleton load phase — exempt the skeleton AND the final app */
-body.dm-loading > *:not(#dm-app):not(.dm-grid-section):not(style):not(script):not(link):not(meta):not(noscript) {
-  display: none !important;
-}
-
-/* Additional kill-switches for WP theme elements */
-body.dm-reimagined .mh-container,
-body.dm-reimagined .mh-container-outer,
-body.dm-reimagined #mh-header,
-body.dm-reimagined .mh-header-inner,
-body.dm-reimagined #mh-navigation,
-body.dm-reimagined .mh-navigation,
-body.dm-reimagined #mh-content-row,
-body.dm-reimagined .mh-content-row,
-body.dm-reimagined #mh-content,
-body.dm-reimagined .mh-content-main,
-body.dm-reimagined #mh-sidebar,
-body.dm-reimagined .mh-sidebar,
-body.dm-reimagined #mh-footer,
-body.dm-reimagined .mh-footer,
-body.dm-reimagined .mh-paging,
-body.dm-reimagined ins,
-body.dm-reimagined .adsbygoogle,
-body.dm-reimagined .ai-viewports,
-body.dm-reimagined [id*="google_ads"],
-body.dm-reimagined [class*="ai-viewport"] {
+/* Suppress Ads (CSS-only block) */
+.ai-viewports,
+ins,
+.adsbygoogle,
+[id*="google_ads"],
+[class*="ad-slot"],
+[class*="ad-wrap"],
+[id*="AdSense"],
+.mh-ads,
+[data-ad],
+iframe[src*="ads"],
+iframe[src*="doubleclick"],
+iframe[src*="googlesyndication"] {
   display: none !important;
   visibility: hidden !important;
-  opacity: 0 !important;
   pointer-events: none !important;
-  height: 0 !important;
-  overflow: hidden !important;
 }
 
 /* ── 4. App Shell ──────────────────────────────────────────── */
