@@ -582,7 +582,7 @@
         section.appendChild(this.buildEmptyState());
         return section;
       }
-      const grid = el("div", { className: "dm-grid", "data-cols": "4" });
+      const grid = el("div", { className: "dm-grid", "data-cols": "6" });
       for (const post of posts) {
         grid.appendChild(this.buildCard(post));
       }
@@ -776,7 +776,7 @@
       const section = el("section", { className: "dm-grid-section" });
       const grid = el("div", {
         className: "dm-grid dm-grid--skeleton",
-        "data-cols": "4",
+        "data-cols": "6",
       });
       for (let i = 0; i < count; i++) {
         const card = el("div", { className: "dm-card dm-card--skeleton" });
