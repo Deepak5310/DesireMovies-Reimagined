@@ -9,6 +9,9 @@
 (async function () {
   "use strict";
 
+  // Set the active class on HTML tag immediately to hide original theme layout elements
+  document.documentElement.classList.add("dm-extension-active");
+
   // ── 1. Common Helpers ──
   function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
@@ -1621,5 +1624,9 @@
   }
 
   // Initialize App
-  initApp();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initApp);
+  } else {
+    initApp();
+  }
 })();
