@@ -1359,6 +1359,29 @@
 
     async init() {
       const data = this.extractSinglePost();
+
+      // Fetch correct IMDb rating from OMDb API
+      if (data.parsed && data.parsed.cleanTitle) {
+        try {
+          const queryTitle = data.parsed.cleanTitle;
+          const queryYear = data.parsed.year || "";
+          const apiUrl = `https://www.omdbapi.com/?apikey=thewdb&t=${encodeURIComponent(queryTitle)}&y=${queryYear}`;
+          const res = await fetch(apiUrl);
+          const movieData = await res.json();
+          if (movieData && movieData.Response === "True" && movieData.imdbRating && movieData.imdbRating !== "N/A") {
+            const parsedRating = `${movieData.imdbRating}/10`;
+            const imdbIndex = data.releaseInfo.findIndex((info) => info.key === "IMDb");
+            if (imdbIndex !== -1) {
+              data.releaseInfo[imdbIndex].value = parsedRating;
+            } else {
+              data.releaseInfo.push({ key: "IMDb", value: parsedRating });
+            }
+          }
+        } catch (err) {
+          console.warn("[DM Reimagined] Failed to fetch correct IMDb rating:", err);
+        }
+      }
+
       const navLinks = DMParser.extractNavLinks();
       const app = this.buildDetailPage(data, navLinks);
       document.body.appendChild(app);
