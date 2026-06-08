@@ -243,8 +243,15 @@
         const nodes = document.querySelectorAll(sel);
         if (nodes.length > 0) {
           nodes.forEach((a) => {
-            const text = a.textContent.trim();
+            let text = a.textContent.trim();
             const href = a.href;
+
+            // Skip "Desiremovies Home" to avoid redundancy in nav and category bars
+            if (/desiremovies\s+home/i.test(text) || text.toLowerCase() === "home") return;
+
+            // Normalize brackets into parentheses for consistent labeling
+            text = text.replace(/\[([^\]]+)\]/g, "($1)");
+
             if (text && href && !links.find((l) => l.href === href)) {
               links.push({ text, href });
             }
