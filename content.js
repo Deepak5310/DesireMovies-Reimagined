@@ -606,124 +606,64 @@
       const center = el("div", { className: "dm-navbar__center" });
       const navList = el("ul", { className: "dm-navbar__links" });
 
-      // Define groups and subcategories
-      const groups = [
-        {
-          name: "South Cinema",
-          items: [
-            { text: "South Movies(Hindi)", slug: "south-movies-hindi", regex: /south.*hindi/i }
-          ]
-        },
-        {
-          name: "Bollywood & Regional",
-          items: [
-            { text: "Bollywood Movies", slug: "bollywood-movies", regex: /bollywood/i },
-            { text: "Punjabi Movies", slug: "punjabi-movies", regex: /punjabi/i },
-            { text: "Gujarati Movies", slug: "gujarati-movies", regex: /gujarati/i },
-            { text: "Bhojpuri Movies", slug: "bhojpuri-movies", regex: /bhojpuri/i }
-          ]
-        },
-        {
-          name: "Hollywood & Foreign",
-          items: [
-            { text: "Hollywood Movies (Hindi)", slug: "hollywood-movies-hindi", regex: /hollywood.*hindi/i },
-            { text: "Hollywood Movies (English)", slug: "hollywood-movies-english", regex: /hollywood.*(english|eng)/i },
-            { text: "Korean Movie (Hindi)", slug: "korean-movies-hindi", regex: /korean.*movie/i }
-          ]
-        },
-        {
-          name: "TV & Web Series",
-          items: [
-            { text: "Web series", slug: "web-series", regex: /web.*series/i },
-            { text: "Tv Show", slug: "tv-shows", regex: /tv.*show/i },
-            { text: "Korean Show in Hindi", slug: "korean-shows-hindi", regex: /korean.*show/i },
-            { text: "English TV show (Hindi)", slug: "english-tv-shows-hindi", regex: /english.*(tv|show).*hindi/i }
-          ]
-        },
-        {
-          name: "Classics",
-          items: [
-            { text: "Old is Gold Movies", slug: "old-is-gold-movies", regex: /old.*gold/i }
-          ]
-        }
-      ];
-
-      const usedLinks = new Set();
-      groups.forEach((group) => {
-        group.items.forEach((item) => {
-          const match = navLinks.find((link) => item.regex.test(link.text));
-          if (match) {
-            item.href = match.href;
-            usedLinks.add(match.href);
-          } else {
-            item.href = window.location.origin + "/category/" + item.slug + "/";
-          }
-        });
+      // Home link
+      const homeLi = el("li", { className: "dm-navbar__link-item" });
+      const homeA = el("a", {
+        href: window.location.origin + "/",
+        className: "dm-navbar__link",
       });
-
-      const leftoverLinks = navLinks.filter((link) => !usedLinks.has(link.href));
-      if (leftoverLinks.length > 0) {
-        groups.push({
-          name: "More",
-          items: leftoverLinks.map((link) => ({
-            text: link.text,
-            href: link.href
-          }))
-        });
+      homeA.textContent = "Home";
+      if (
+        window.location.pathname === "/" ||
+        window.location.pathname === ""
+      ) {
+        homeA.classList.add("dm-navbar__link--active");
       }
+      homeLi.appendChild(homeA);
+      navList.appendChild(homeLi);
 
-      // Render Dropdowns
-      groups.forEach((group) => {
-        const dropdownLi = el("li", {
-          className: "dm-navbar__link-item dm-dropdown",
+      // Categories Dropdown Link
+      const dropdownLi = el("li", {
+        className: "dm-navbar__link-item dm-dropdown",
+      });
+      const dropdownBtn = el("button", {
+        type: "button",
+        className: "dm-navbar__link dm-dropdown-btn",
+      });
+      dropdownBtn.innerHTML = `Categories <span class="dm-dropdown-arrow"></span>`;
+
+      const dropdownMenu = el("div", { className: "dm-dropdown-menu" });
+      const dropdownGrid = el("div", { className: "dm-dropdown-grid" });
+
+      // Category links
+      navLinks.forEach((link) => {
+        const catLink = el("a", {
+          href: link.href,
+          className: "dm-dropdown-link",
         });
-        const dropdownBtn = el("button", {
-          type: "button",
-          className: "dm-navbar__link dm-dropdown-btn",
-        });
-        dropdownBtn.innerHTML = `${group.name} <span class="dm-dropdown-arrow"></span>`;
-
-        const dropdownMenu = el("div", { className: "dm-dropdown-menu" });
-        const dropdownGrid = el("div", { className: "dm-dropdown-grid" });
-
-        group.items.forEach((item) => {
-          const catLink = el("a", {
-            href: item.href,
-            className: "dm-dropdown-link",
-          });
-          catLink.textContent = item.text;
-          if (
-            window.location.href === item.href ||
-            window.location.href.startsWith(item.href)
-          ) {
-            catLink.classList.add("dm-dropdown-link--active");
-            dropdownBtn.classList.add("dm-navbar__link--active");
-          }
-          dropdownGrid.appendChild(catLink);
-        });
-
-        dropdownMenu.appendChild(dropdownGrid);
-        dropdownLi.appendChild(dropdownBtn);
-        dropdownLi.appendChild(dropdownMenu);
-        navList.appendChild(dropdownLi);
-
-        dropdownBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const allDropdowns = document.querySelectorAll(".dm-dropdown");
-          allDropdowns.forEach((d) => {
-            if (d !== dropdownLi) {
-              d.classList.remove("dm-dropdown--open");
-            }
-          });
-          dropdownLi.classList.toggle("dm-dropdown--open");
-        });
+        catLink.textContent = link.text;
+        if (
+          window.location.href === link.href ||
+          window.location.href.startsWith(link.href)
+        ) {
+          catLink.classList.add("dm-dropdown-link--active");
+          dropdownBtn.classList.add("dm-navbar__link--active");
+        }
+        dropdownGrid.appendChild(catLink);
       });
 
+      dropdownMenu.appendChild(dropdownGrid);
+      dropdownLi.appendChild(dropdownBtn);
+      dropdownLi.appendChild(dropdownMenu);
+      navList.appendChild(dropdownLi);
+
+      // Dropdown toggle
+      dropdownBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        dropdownLi.classList.toggle("dm-dropdown--open");
+      });
       document.addEventListener("click", () => {
-        const allDropdowns = document.querySelectorAll(".dm-dropdown");
-        allDropdowns.forEach((d) => {
-          d.classList.remove("dm-dropdown--open");
-        });
+        dropdownLi.classList.remove("dm-dropdown--open");
       });
 
       center.appendChild(navList);
