@@ -463,24 +463,22 @@
       const shown = new Set();
       let count = 0;
 
-      const addBadge = (text, configKey) => {
+      const addBadge = (text) => {
         if (count >= maxBadges) return;
-        const cfg = this.BADGE_CONFIG[configKey] || this.BADGE_CONFIG[text];
+        const cfg = this.BADGE_CONFIG[text];
         if (!cfg || shown.has(cfg.label)) return;
         shown.add(cfg.label);
         fragment.appendChild(this.buildBadge(cfg.label, cfg.color));
         count++;
       };
 
-      for (const q of post.quality) addBadge(q, q);
-      for (const c of post.codec) addBadge(c, c);
+      for (const q of post.quality) addBadge(q);
+      for (const c of post.codec) addBadge(c);
       for (const a of post.audio) {
-        if (/dual/i.test(a)) addBadge("Dual Audio", "Dual Audio");
-        else if (/multi/i.test(a)) addBadge("Multi Audio", "Multi Audio");
+        if (/dual/i.test(a)) addBadge("Dual Audio");
+        else if (/multi/i.test(a)) addBadge("Multi Audio");
       }
-      if (post.subtitles) {
-        addBadge("ESubs", "ESubs");
-      }
+      if (post.subtitles) addBadge("ESubs");
       return fragment;
     },
 
@@ -862,6 +860,11 @@
 
   // ── 4. Single Post Redesign ──
   const DMSingle = {
+    // Regex constants hoisted to avoid recreation on every extractDownloadSections call
+    DOWNLOAD_LINK_RE: /download|GD|Gdrive|Magnet|Torrent|Direct/i,
+    QUALITY_RE: /\d{3,4}p|4K|HEVC|x265|x264|HC|Esub|Dual|Multi|MB|GB/i,
+    SECTION_HEADING_RE: /version|untouched|encoded|print|cam|part|ep\b|episode|season|pack|zip|single\s*link/i,
+
     qualityColor(label) {
       if (/4K|2160/i.test(label)) return "#a855f7";
       if (/1080/i.test(label)) return "#3b82f6";
@@ -992,10 +995,7 @@
         ...contentEl.children
       ].filter(node => ["P", "H1", "H2", "H3", "H4", "H5", "H6", "DIV", "HR", "TABLE", "CENTER"].includes(node.tagName.toUpperCase()));
       let currentSection = null;
-      const DOWNLOAD_LINK_RE = /download|GD|Gdrive|Magnet|Torrent|Direct/i;
-      const QUALITY_RE = /\d{3,4}p|4K|HEVC|x265|x264|HC|Esub|Dual|Multi|MB|GB/i;
-      const SECTION_HEADING_RE =
-        /version|untouched|encoded|print|cam|part|ep\b|episode|season|pack|zip|single\s*link/i;
+      const { DOWNLOAD_LINK_RE, QUALITY_RE, SECTION_HEADING_RE } = this;
 
       for (const node of allChildren) {
         const text = node.textContent?.trim() || "";

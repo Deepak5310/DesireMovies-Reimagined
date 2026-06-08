@@ -7,18 +7,16 @@
 
 "use strict";
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "fetch") {
-    fetch(request.url, request.options)
-      .then((response) =>
-        response.text().then((text) => ({
-          status: response.status,
-          statusText: response.statusText,
-          text: text,
-        }))
-      )
-      .then((data) => sendResponse({ success: true, data }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true; // Keep the message channel open for async response
-  }
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request.action !== "fetch") return;
+  (async () => {
+    try {
+      const response = await fetch(request.url, request.options);
+      const text = await response.text();
+      sendResponse({ success: true, data: { status: response.status, statusText: response.statusText, text } });
+    } catch (err) {
+      sendResponse({ success: false, error: err.message });
+    }
+  })();
+  return true; // Keep the message channel open for async response
 });
