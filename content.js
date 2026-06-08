@@ -588,20 +588,10 @@
         className: "dm-logo",
       });
 
-      if (siteLogo) {
-        logoLink.appendChild(
-          el("img", {
-            src: siteLogo,
-            alt: "DesireMovies",
-            className: "dm-logo__img",
-          }),
-        );
-      } else {
-        const logoText = el("span", { className: "dm-logo__text" });
-        logoText.innerHTML =
-          '<span class="dm-logo__desire">Desire</span><span class="dm-logo__movies">Movies</span>';
-        logoLink.appendChild(logoText);
-      }
+      const logoText = el("span", { className: "dm-logo__text" });
+      logoText.innerHTML =
+        '<span class="dm-logo__desire">Desire</span><span class="dm-logo__movies">Movies</span>';
+      logoLink.appendChild(logoText);
       left.appendChild(logoLink);
 
       const center = el("div", { className: "dm-navbar__center" });
