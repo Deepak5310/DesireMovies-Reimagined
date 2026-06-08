@@ -32,19 +32,20 @@
   /* ── Load user settings ──────────────────────────────────── */
   const settings = await DMStorage.getAll();
 
-  /* ── Show skeleton while we process ─────────────────────── */
-  hideOriginalContent();
-  const skeleton = DMRenderer.buildSkeletonGrid(12, settings.gridColumns);
-  document.body.appendChild(skeleton);
-
-  /* ── Extract data from original DOM ─────────────────────── */
+  /* ── Extract data FIRST (WP DOM still visible) ───────────── */
   const posts      = DMParser.extractPosts();
   const navLinks   = DMParser.extractNavLinks();
   const pagination = DMParser.extractPagination();
   const siteLogo   = DMParser.extractSiteLogo();
   const pageTitle  = document.querySelector('h1, .archive-title, .category-title, .page-title')?.textContent?.trim() || '';
 
-  /* ── Remove skeleton ─────────────────────────────────────── */
+  /* ── Now hide original content & show skeleton ───────────── */
+  hideOriginalContent();
+  const skeleton = DMRenderer.buildSkeletonGrid(12, settings.gridColumns);
+  document.body.appendChild(skeleton);
+
+  /* ── Small delay so skeleton paints, then swap in real UI ── */
+  await new Promise(r => setTimeout(r, 80));
   skeleton.remove();
 
   /* ── Build & inject new UI shell ────────────────────────── */
@@ -59,6 +60,9 @@
   });
 
   document.body.appendChild(app);
+  // ⚠️ CRITICAL: remove dm-loading BEFORE adding dm-reimagined
+  // otherwise body.dm-loading CSS rule keeps #dm-app display:none
+  document.body.classList.remove('dm-loading');
   document.body.classList.add('dm-reimagined');
 
   /* ── Wire up search ──────────────────────────────────────── */
@@ -100,50 +104,43 @@
 
   /* ── Hide original WordPress content ────────────────────── */
   function hideOriginalContent() {
-    // We hide by adding a class to body, CSS handles the rest
     document.body.classList.add('dm-loading');
 
-    // Also directly hide the main structural elements
+    // Directly hide all WP structural elements with inline styles
+    // (inline styles beat any stylesheet, including the site's own CSS)
     const toHide = [
-      '#mh-header',
-      '.mh-header-inner',
-      '#mh-navigation',
-      '.mh-navigation',
-      '.mh-main-nav-search',
-      '#mh-content-row',
-      '.mh-content-row',
-      '#mh-sidebar',
-      '.mh-sidebar',
-      '#mh-content',
-      '.mh-content-main',
-      '#mh-footer',
-      '.mh-footer',
+      '#mh-header', '.mh-header-inner',
+      '#mh-navigation', '.mh-navigation', '.mh-main-nav-search',
+      '#mh-content-row', '.mh-content-row',
+      '#mh-sidebar', '.mh-sidebar',
+      '#mh-content', '.mh-content-main',
+      '#mh-footer', '.mh-footer',
       '.mh-paging',
-      // Generic WP structures
-      '#masthead',
-      '#site-header',
-      '#primary-menu',
-      '#content',
-      '#primary',
-      '#secondary',
-      '#colophon',
-      '.site-header',
-      '.site-footer',
-      '.navigation',
-      '.main-navigation',
-      // The outermost container
-      '.mh-container-outer',
-      '.mh-container',
+      // Generic WP
+      '#masthead', '#site-header', '#primary-menu',
+      '#content', '#primary', '#secondary', '#colophon',
+      '.site-header', '.site-footer',
+      '.navigation', '.main-navigation',
+      // Theme root containers
+      '.mh-container-outer', '.mh-container',
     ];
 
+    const HIDE = 'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;height:0!important;overflow:hidden!important;';
     for (const sel of toHide) {
       document.querySelectorAll(sel).forEach(el => {
         el.dataset.dmHidden = '1';
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;';
+        el.style.cssText = HIDE;
       });
     }
 
-    // Hide ad elements
+    // Also hide every direct body child that isn't a script/style
+    // This is the nuclear option — catches any WP wrapper not listed above
+    for (const child of document.body.children) {
+      if (['SCRIPT','STYLE','LINK','META','NOSCRIPT'].includes(child.tagName)) continue;
+      if (child.id === 'dm-app' || child.classList.contains('dm-grid-section')) continue;
+      child.style.cssText = HIDE;
+    }
+
     suppressAds();
   }
 
