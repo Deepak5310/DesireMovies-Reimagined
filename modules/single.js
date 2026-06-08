@@ -97,23 +97,38 @@ window.DMSingle = (() => {
     // Poster / main image — try all lazy-load data attributes
     const contentEl = document.querySelector('.entry-content, #mh-content .entry-content, .post-content, .mh-excerpt-block');
     let poster = '';
-    if (contentEl) {
-      // Some themes put the poster in a dedicated wrapper outside .entry-content
-      const posterSelectors = [
-        '.mh-thumb img',
-        '.post-thumb img',
-        '.wp-post-image',
-        'figure.post-thumbnail img',
-        'figure img',
-      ];
-      for (const sel of posterSelectors) {
-        const img = document.querySelector(sel);
-        if (img) { poster = getImgSrc(img); if (poster) break; }
+    
+    // 1. Try to find a featured image anywhere on the page
+    const posterSelectors = [
+      'img[fifu-featured="1"]',
+      'img[data-fifu-featured]',
+      '.wp-post-image img',
+      'img.wp-post-image',
+      '.mh-thumb img',
+      '.post-thumb img',
+      'figure.post-thumbnail img',
+      'figure img',
+    ];
+    for (const sel of posterSelectors) {
+      const img = document.querySelector(sel);
+      if (img) {
+        const src = getImgSrc(img);
+        if (src) {
+          poster = src;
+          break;
+        }
       }
-      // Fall back to first image in post content
-      if (!poster) {
-        const firstImg = contentEl.querySelector('img');
-        poster = getImgSrc(firstImg);
+    }
+
+    // 2. Fall back to the first image inside post content that actually has a valid URL
+    if (!poster && contentEl) {
+      const allImgs = [...contentEl.querySelectorAll('img')];
+      for (const img of allImgs) {
+        const src = getImgSrc(img);
+        if (src) {
+          poster = src;
+          break;
+        }
       }
     }
 
@@ -145,12 +160,25 @@ window.DMSingle = (() => {
     const screenshots = [];
     if (contentEl) {
       const imgs = [...contentEl.querySelectorAll('img')];
-      // Skip first image (poster)
-      imgs.slice(1).forEach(img => {
+      imgs.forEach(img => {
         const src = getImgSrc(img);
-        if (src && !src.includes('telegram') && !src.includes('logo') && !src.includes('1x1')) {
-          screenshots.push(src);
+        if (!src) return;
+        
+        // Skip if this image is the poster
+        if (src === poster) return;
+        
+        // Skip other banner / ad / button / logo images
+        if (
+          src.includes('telegram') || 
+          src.includes('logo') || 
+          src.includes('1x1') || 
+          src.includes('banner') || 
+          src.includes('dd.jpg')
+        ) {
+          return;
         }
+        
+        screenshots.push(src);
       });
     }
 
