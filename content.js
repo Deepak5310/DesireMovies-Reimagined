@@ -934,7 +934,6 @@
         const patterns = [
           { key: "Title", re: /Title[:\t \u00a0]+([^\n\r]+)/i },
           { key: "Year", re: /Year[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Size", re: /Size[:\t \u00a0]+([^\n\r]+)/i },
           { key: "Quality", re: /Qualit[y]?[:\t \u00a0]+([^\n\r]+)/i },
           { key: "IMDb", re: /IMDb[:\t \u00a0]+([^\n\r]+)/i },
           { key: "Language", re: /Language[:\t \u00a0]+([^\n\r]+)/i },
@@ -1129,6 +1128,7 @@
     },
 
     buildDetailPage(data, navLinks) {
+      const imdbId = data.imdbId || null;
       const {
         rawTitle,
         parsed,
@@ -1224,9 +1224,20 @@
           infoGrid.appendChild(
             el("dt", { className: "dm-single__info-key", textContent: key }),
           );
-          infoGrid.appendChild(
-            el("dd", { className: "dm-single__info-val", textContent: value }),
-          );
+          const dd = el("dd", { className: "dm-single__info-val" });
+          if (key === "IMDb" && imdbId) {
+            const ratingLink = el("a", {
+              href: `https://www.imdb.com/title/${imdbId}/`,
+              target: "_blank",
+              rel: "noopener noreferrer",
+              className: "dm-single__imdb-link",
+              textContent: value,
+            });
+            dd.appendChild(ratingLink);
+          } else {
+            dd.textContent = value;
+          }
+          infoGrid.appendChild(dd);
         });
         metaCol.appendChild(infoGrid);
       } else if (parsed.year || parsed.type || parsed.season) {
@@ -1419,6 +1430,7 @@
               );
 
               if (best) imdbId = best.id;
+              data.imdbId = imdbId;
             }
           }
 

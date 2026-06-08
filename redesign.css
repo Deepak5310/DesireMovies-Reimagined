@@ -1441,6 +1441,20 @@ body.dm-reimagined ::-webkit-scrollbar-thumb:hover {
   filter: brightness(1.05);
 }
 
+/* ── IMDb Rating Link ─── */
+.dm-single__imdb-link {
+  color: #f5c518;
+  text-decoration: none;
+  font-weight: 700;
+  transition: color var(--dm-t-fast) var(--dm-ease), opacity var(--dm-t-fast) var(--dm-ease);
+}
+
+.dm-single__imdb-link:hover {
+  color: #e6b800;
+  opacity: 0.9;
+  text-decoration: underline;
+}
+
 /* ── Responsive for single page ─── */
 @media (max-width: 720px) {
   .dm-single__hero {
