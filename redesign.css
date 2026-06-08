@@ -137,7 +137,7 @@ body.dm-reimagined [class*="ai-viewport"] {
   max-width: var(--dm-max-w);
   width: 100%;
   margin: 0 auto;
-  padding: calc(var(--dm-navbar-h) + var(--dm-catbar-h) + 28px) var(--dm-gutter) 60px;
+  padding: calc(var(--dm-navbar-h) + 28px) var(--dm-gutter) 60px;
   box-sizing: border-box;
 }
 
@@ -169,7 +169,7 @@ body.dm-reimagined [class*="ai-viewport"] {
   flex: 1;
   display: flex;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .dm-navbar__right {
@@ -348,40 +348,156 @@ body.dm-reimagined [class*="ai-viewport"] {
   background: rgba(255, 255, 255, 0.10);
 }
 
-/* ── 6. Category Filter Bar ────────────────────────────────── */
-.dm-category-bar {
-  position: fixed;
-  top: var(--dm-navbar-h);
-  left: 0;
-  right: 0;
-  z-index: 998;
-  height: var(--dm-catbar-h);
-  background: rgba(9, 9, 15, 0.95);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--dm-border);
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-.dm-category-bar__inner {
-  display: flex;
+.dm-mobile-nav__link--all {
+  background: var(--dm-accent-grad) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  font-weight: 600;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 24px;
-  box-sizing: border-box;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  white-space: nowrap;
-  width: 100%;
-  height: 100%;
+  box-shadow: 0 2px 8px var(--dm-accent-glow);
 }
 
-.dm-category-bar__inner::-webkit-scrollbar {
-  display: none;
+.dm-mobile-nav__link--active {
+  color: #fff !important;
+  background: rgba(232, 69, 69, 0.15) !important;
+  border-color: rgba(232, 69, 69, 0.3) !important;
+}
+
+/* ── 6. Categories Dropdown Menu ────────────────────────────── */
+.dm-dropdown {
+  position: relative;
+}
+
+.dm-dropdown-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dm-dropdown-arrow {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid var(--dm-text-secondary);
+  transition: transform var(--dm-t-base) var(--dm-ease);
+  margin-top: 2px;
+}
+
+.dm-dropdown-btn:hover .dm-dropdown-arrow,
+.dm-dropdown--open .dm-dropdown-arrow,
+.dm-dropdown:hover .dm-dropdown-arrow {
+  border-top-color: var(--dm-text-primary);
+}
+
+.dm-dropdown--open .dm-dropdown-arrow,
+.dm-dropdown:hover .dm-dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.dm-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  z-index: 1100;
+  width: max-content;
+  min-width: 420px;
+  background: var(--dm-glass-bg);
+  backdrop-filter: var(--dm-glass-blur);
+  -webkit-backdrop-filter: var(--dm-glass-blur);
+  border: var(--dm-glass-border);
+  border-radius: var(--dm-r-lg);
+  padding: 16px;
+  box-shadow: var(--dm-shadow-lg), 0 0 30px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dm-t-base) var(--dm-ease),
+              transform var(--dm-t-base) var(--dm-ease),
+              visibility var(--dm-t-base) var(--dm-ease);
+}
+
+.dm-dropdown:hover .dm-dropdown-menu,
+.dm-dropdown.dm-dropdown--open .dm-dropdown-menu {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(6px);
+}
+
+.dm-dropdown-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .dm-dropdown-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .dm-dropdown-menu {
+    min-width: 300px;
+  }
+}
+
+.dm-dropdown-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--dm-r-md);
+  color: var(--dm-text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition: color var(--dm-t-fast) var(--dm-ease),
+              background var(--dm-t-fast) var(--dm-ease),
+              border-color var(--dm-t-fast) var(--dm-ease),
+              box-shadow var(--dm-t-fast) var(--dm-ease);
+}
+
+.dm-dropdown-link:hover {
+  color: var(--dm-text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--dm-border);
+  box-shadow: var(--dm-shadow-sm);
+}
+
+.dm-dropdown-link--active {
+  color: #fff !important;
+  background: rgba(232, 69, 69, 0.15) !important;
+  border-color: rgba(232, 69, 69, 0.3) !important;
+  box-shadow: 0 0 10px rgba(232, 69, 69, 0.15);
+}
+
+.dm-dropdown-link--all {
+  grid-column: span 3;
+  justify-content: center;
+  background: var(--dm-accent-grad);
+  border-color: transparent;
+  color: #fff !important;
+  font-weight: 600;
+  box-shadow: 0 2px 10px var(--dm-accent-glow);
+}
+
+@media (max-width: 900px) {
+  .dm-dropdown-link--all {
+    grid-column: span 2;
+  }
+}
+
+.dm-dropdown-link--all:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 15px var(--dm-accent-glow);
 }
 
 /* Chips */

@@ -603,19 +603,75 @@
 
       const center = el("div", { className: "dm-navbar__center" });
       const navList = el("ul", { className: "dm-navbar__links" });
-      navLinks.slice(0, 8).forEach((link) => {
-        const li = el("li", { className: "dm-navbar__link-item" });
-        const a = el("a", { href: link.href, className: "dm-navbar__link" });
-        a.textContent = link.text;
+
+      // Home link
+      const homeLi = el("li", { className: "dm-navbar__link-item" });
+      const homeA = el("a", {
+        href: window.location.origin + "/",
+        className: "dm-navbar__link",
+      });
+      homeA.textContent = "Home";
+      if (
+        window.location.pathname === "/" ||
+        window.location.pathname === ""
+      ) {
+        homeA.classList.add("dm-navbar__link--active");
+      }
+      homeLi.appendChild(homeA);
+      navList.appendChild(homeLi);
+
+      // Categories Dropdown Link
+      const dropdownLi = el("li", {
+        className: "dm-navbar__link-item dm-dropdown",
+      });
+      const dropdownBtn = el("button", {
+        type: "button",
+        className: "dm-navbar__link dm-dropdown-btn",
+      });
+      dropdownBtn.innerHTML = `Categories <span class="dm-dropdown-arrow"></span>`;
+
+      const dropdownMenu = el("div", { className: "dm-dropdown-menu" });
+      const dropdownGrid = el("div", { className: "dm-dropdown-grid" });
+
+      // All titles link
+      const allLink = el("a", {
+        href: window.location.origin + "/",
+        className: "dm-dropdown-link dm-dropdown-link--all",
+      });
+      allLink.innerHTML = `${svgIcon("spark").outerHTML} All Titles`;
+      dropdownGrid.appendChild(allLink);
+
+      // Category links
+      navLinks.forEach((link) => {
+        const catLink = el("a", {
+          href: link.href,
+          className: "dm-dropdown-link",
+        });
+        catLink.textContent = link.text;
         if (
           window.location.href === link.href ||
           window.location.href.startsWith(link.href)
         ) {
-          a.classList.add("dm-navbar__link--active");
+          catLink.classList.add("dm-dropdown-link--active");
+          dropdownBtn.classList.add("dm-navbar__link--active");
         }
-        li.appendChild(a);
-        navList.appendChild(li);
+        dropdownGrid.appendChild(catLink);
       });
+
+      dropdownMenu.appendChild(dropdownGrid);
+      dropdownLi.appendChild(dropdownBtn);
+      dropdownLi.appendChild(dropdownMenu);
+      navList.appendChild(dropdownLi);
+
+      // Touch events for mobile/tablet dropdown behavior
+      dropdownBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        dropdownLi.classList.toggle("dm-dropdown--open");
+      });
+      document.addEventListener("click", () => {
+        dropdownLi.classList.remove("dm-dropdown--open");
+      });
+
       center.appendChild(navList);
 
       const right = el("div", { className: "dm-navbar__right" });
@@ -663,51 +719,31 @@
         className: "dm-mobile-nav",
         id: "dm-mobile-nav",
       });
+
+      const mobileAll = el("a", {
+        href: window.location.origin + "/",
+        className: "dm-mobile-nav__link dm-mobile-nav__link--all",
+      });
+      mobileAll.innerHTML = `${svgIcon("spark").outerHTML} All Titles`;
+      mobileNav.appendChild(mobileAll);
+
       navLinks.forEach((link) => {
-        mobileNav.appendChild(
-          el("a", {
-            href: link.href,
-            className: "dm-mobile-nav__link",
-            textContent: link.text,
-          }),
-        );
+        const a = el("a", {
+          href: link.href,
+          className: "dm-mobile-nav__link",
+          textContent: link.text,
+        });
+        if (
+          window.location.href === link.href ||
+          window.location.href.startsWith(link.href)
+        ) {
+          a.classList.add("dm-mobile-nav__link--active");
+        }
+        mobileNav.appendChild(a);
       });
       nav.appendChild(mobileNav);
 
       return nav;
-    },
-
-    buildCategoryBar(navLinks, currentCategory) {
-      const bar = el("div", {
-        className: "dm-category-bar",
-        id: "dm-category-bar",
-      });
-      const inner = el("div", { className: "dm-category-bar__inner" });
-
-      const allChip = el("a", {
-        href: window.location.origin + "/",
-        className: `dm-chip ${!currentCategory ? "dm-chip--active" : ""}`,
-      });
-      allChip.innerHTML = `${svgIcon("spark").outerHTML} All`;
-      inner.appendChild(allChip);
-
-      navLinks.forEach((link) => {
-        const chip = el("a", {
-          href: link.href,
-          className: "dm-chip",
-          textContent: link.text,
-        });
-        if (
-          window.location.href.includes(link.href) ||
-          link.href === window.location.href
-        ) {
-          chip.classList.add("dm-chip--active");
-        }
-        inner.appendChild(chip);
-      });
-
-      bar.appendChild(inner);
-      return bar;
     },
 
     buildPageHeader(text, sub) {
@@ -811,7 +847,6 @@
     buildShell({ posts, navLinks, pagination, siteLogo, pageType, pageTitle }) {
       const app = el("div", { className: "dm-app", id: "dm-app" });
       app.appendChild(this.buildNavbar(navLinks, siteLogo));
-      app.appendChild(this.buildCategoryBar(navLinks));
 
       const main = el("main", { className: "dm-main", id: "dm-main" });
       if (pageType === "category") {
@@ -1134,7 +1169,6 @@
       app.appendChild(
         DMRenderer.buildNavbar(navLinks, DMParser.extractSiteLogo()),
       );
-      app.appendChild(DMRenderer.buildCategoryBar(navLinks));
 
       const main = el("main", {
         className: "dm-main dm-single-main",
