@@ -633,13 +633,7 @@
       const dropdownMenu = el("div", { className: "dm-dropdown-menu" });
       const dropdownGrid = el("div", { className: "dm-dropdown-grid" });
 
-      // All titles link
-      const allLink = el("a", {
-        href: window.location.origin + "/",
-        className: "dm-dropdown-link dm-dropdown-link--all",
-      });
-      allLink.innerHTML = `${svgIcon("spark").outerHTML} All Titles`;
-      dropdownGrid.appendChild(allLink);
+
 
       // Category links
       navLinks.forEach((link) => {
@@ -720,12 +714,7 @@
         id: "dm-mobile-nav",
       });
 
-      const mobileAll = el("a", {
-        href: window.location.origin + "/",
-        className: "dm-mobile-nav__link dm-mobile-nav__link--all",
-      });
-      mobileAll.innerHTML = `${svgIcon("spark").outerHTML} All Titles`;
-      mobileNav.appendChild(mobileAll);
+
 
       navLinks.forEach((link) => {
         const a = el("a", {
