@@ -94,6 +94,22 @@
     return bestUrl || parts[0]?.split(/\s+/)[0] || "";
   }
 
+  async function bgFetch(url, options = {}) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: "fetch", url, options }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (response && response.success) {
+          resolve(response.data);
+        } else {
+          reject(new Error(response ? response.error : "Background fetch failed"));
+        }
+      });
+    });
+  }
+
   // ── 2. DOM Extraction & Title Parser ──
   const DMParser = {
     detectPageType() {
@@ -916,14 +932,15 @@
       if (contentEl) {
         const allText = contentEl.innerText || contentEl.textContent || "";
         const patterns = [
-          { key: "Title", re: /Title[:\s]+([^\n\r]+)/i },
-          { key: "Year", re: /Year[:\s]+([^\n\r]+)/i },
-          { key: "Quality", re: /Qualit[y]?[:\s]+([^\n\r]+)/i },
-          { key: "IMDb", re: /IMDb[:\s]+([^\n\r]+)/i },
-          { key: "Language", re: /Language[:\s]+([^\n\r]+)/i },
-          { key: "Genres", re: /(?:All\s+)?Genres?[:\s]+([^\n\r]+)/i },
-          { key: "Audio", re: /Audio[:\s]+([^\n\r]+)/i },
-          { key: "Format", re: /Format[:\s]+([^\n\r]+)/i },
+          { key: "Title", re: /Title[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Year", re: /Year[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Size", re: /Size[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Quality", re: /Qualit[y]?[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "IMDb", re: /IMDb[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Language", re: /Language[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Genres", re: /(?:All\s+)?Genres?[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Audio", re: /Audio[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Format", re: /Format[:\t \u00a0]+([^\n\r]+)/i },
         ];
         for (const { key, re } of patterns) {
           const m = allText.match(re);
@@ -1360,21 +1377,80 @@
     async init() {
       const data = this.extractSinglePost();
 
-      // Fetch correct IMDb rating from OMDb API
+      // Fetch correct IMDb rating from OMDb API / IMDb suggestions
       if (data.parsed && data.parsed.cleanTitle) {
         try {
           const queryTitle = data.parsed.cleanTitle;
           const queryYear = data.parsed.year || "";
+          let imdbRating = null;
+
+          // 1. Try direct OMDb search by title and year
           const apiUrl = `https://www.omdbapi.com/?apikey=thewdb&t=${encodeURIComponent(queryTitle)}&y=${queryYear}`;
-          const res = await fetch(apiUrl);
-          const movieData = await res.json();
+          const responseData = await bgFetch(apiUrl);
+          let movieData = JSON.parse(responseData.text);
+
+          // 2. If direct title + year search fails, try suggestions API as fallback
+          if (!movieData || movieData.Response === "False") {
+            const firstChar = queryTitle.trim().charAt(0).toLowerCase();
+            if (firstChar) {
+              const suggestUrl = `https://v3.sg.media-imdb.com/suggestion/${firstChar}/${encodeURIComponent(queryTitle.trim().toLowerCase())}.json`;
+              const suggestRes = await bgFetch(suggestUrl);
+              const suggestData = JSON.parse(suggestRes.text);
+              if (suggestData && suggestData.d && suggestData.d.length > 0) {
+                const queryTitleLower = queryTitle.toLowerCase();
+                const targetYear = queryYear ? parseInt(queryYear) : null;
+                
+                // Find best candidate
+                let bestMatch = suggestData.d.find(item => {
+                  if (!item.id || !item.l) return false;
+                  const titleMatch = item.l.toLowerCase() === queryTitleLower;
+                  if (!titleMatch) return false;
+                  if (targetYear && item.y) {
+                    return Math.abs(item.y - targetYear) <= 1;
+                  }
+                  return true;
+                });
+
+                if (!bestMatch) {
+                  bestMatch = suggestData.d.find(item => {
+                    if (!item.id || !item.l) return false;
+                    return item.l.toLowerCase() === queryTitleLower;
+                  });
+                }
+
+                if (!bestMatch) {
+                  bestMatch = suggestData.d.find(item => {
+                    if (!item.id || !item.l) return false;
+                    return item.l.toLowerCase().includes(queryTitleLower) && 
+                           (item.qid === "movie" || item.qid === "tvSeries" || item.qid === "tvMiniSeries");
+                  });
+                }
+
+                if (bestMatch && bestMatch.id) {
+                  // Fetch from OMDb by IMDb ID
+                  const idApiUrl = `https://www.omdbapi.com/?apikey=thewdb&i=${bestMatch.id}`;
+                  const idResponse = await bgFetch(idApiUrl);
+                  movieData = JSON.parse(idResponse.text);
+                }
+              }
+            }
+          }
+
           if (movieData && movieData.Response === "True" && movieData.imdbRating && movieData.imdbRating !== "N/A") {
-            const parsedRating = `${movieData.imdbRating}/10`;
-            const imdbIndex = data.releaseInfo.findIndex((info) => info.key === "IMDb");
+            imdbRating = `${movieData.imdbRating}/10`;
+          }
+
+          const imdbIndex = data.releaseInfo.findIndex((info) => info.key === "IMDb");
+          if (imdbRating) {
             if (imdbIndex !== -1) {
-              data.releaseInfo[imdbIndex].value = parsedRating;
+              data.releaseInfo[imdbIndex].value = imdbRating;
             } else {
-              data.releaseInfo.push({ key: "IMDb", value: parsedRating });
+              data.releaseInfo.push({ key: "IMDb", value: imdbRating });
+            }
+          } else {
+            // Remove incorrect or empty IMDb field if OMDb/IMDb lookup has no rating
+            if (imdbIndex !== -1) {
+              data.releaseInfo.splice(imdbIndex, 1);
             }
           }
         } catch (err) {

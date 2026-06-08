@@ -18,8 +18,13 @@
     },
     "default_title": "DesireMovies Reimagined"
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
-    "https://1desiremovies.top/*"
+    "https://1desiremovies.top/*",
+    "https://v3.sg.media-imdb.com/*",
+    "https://www.omdbapi.com/*"
   ],
   "content_scripts": [
     {
