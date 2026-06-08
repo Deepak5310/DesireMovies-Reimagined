@@ -37,6 +37,7 @@
         "modules/renderer.js",
         "modules/search.js",
         "modules/observer.js",
+        "modules/single.js",
         "content.js"
       ],
       "css": [

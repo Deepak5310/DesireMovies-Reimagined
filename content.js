@@ -21,11 +21,10 @@
 
   if (!isDesiremovies) return;
 
-  /* ── Skip redesign on single post pages (keep original for download links) ── */
+  /* ── Route single post pages to the detail page redesign ── */
   const pageType = DMParser.detectPageType();
   if (pageType === 'single' || pageType === 'page') {
-    // On single post: just apply dark theme + hide ads, don't rebuild layout
-    applyMinimalSinglePageFixes();
+    await DMSingle.init();
     return;
   }
 
