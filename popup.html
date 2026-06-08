@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DesireMovies Reimagined</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #111118;
+      --surface: #1a1a24;
+      --border:  rgba(255,255,255,0.08);
+      --text:    #f0f0f8;
+      --muted:   #6a6a82;
+      --accent:  #e84545;
+      --accent2: #ff6b35;
+    }
+
+    body {
+      width: 300px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header */
+    .header {
+      padding: 16px 18px 14px;
+      background: linear-gradient(135deg, rgba(232,69,69,0.12) 0%, rgba(255,107,53,0.08) 100%);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+
+    .logo-desire { color: var(--text); }
+    .logo-movies {
+      background: linear-gradient(135deg, #e84545, #ff6b35);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .badge {
+      margin-left: auto;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      padding: 2px 8px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+    }
+
+    /* Body */
+    .body {
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .section-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .setting-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .setting-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* Toggle switch */
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.1);
+      border-radius: 100px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      left: 3px;
+      top: 3px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .toggle input:checked + .toggle-track {
+      background: linear-gradient(135deg, #e84545, #ff6b35);
+    }
+
+    .toggle input:checked + .toggle-track::after {
+      transform: translateX(18px);
+    }
+
+    /* Grid columns selector */
+    .cols-selector {
+      display: flex;
+      gap: 4px;
+    }
+
+    .col-btn {
+      width: 32px;
+      height: 28px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .col-btn:hover {
+      border-color: rgba(255,255,255,0.2);
+      color: var(--text);
+    }
+
+    .col-btn.active {
+      background: linear-gradient(135deg, #e84545, #ff6b35);
+      border-color: transparent;
+      color: #fff;
+    }
+
+    /* Divider */
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Footer */
+    .footer {
+      padding: 12px 18px;
+      background: rgba(0,0,0,0.2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-tip {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .footer-tip kbd {
+      display: inline-block;
+      padding: 1px 5px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .reset-btn {
+      font-size: 11px;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      padding: 3px 8px;
+      border-radius: 5px;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .reset-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.06);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <span class="logo-desire">Desire</span><span class="logo-movies">Movies</span>
+    </div>
+    <span class="badge">Reimagined</span>
+  </div>
+
+  <div class="body">
+    <div>
+      <div class="section-label">Appearance</div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Grid Columns</div>
+          <div class="setting-sub">Cards per row on desktop</div>
+        </div>
+        <div class="cols-selector" id="colsSelector">
+          <button class="col-btn" data-cols="3">3</button>
+          <button class="col-btn active" data-cols="4">4</button>
+          <button class="col-btn" data-cols="5">5</button>
+        </div>
+      </div>
+    </div>
+
+    <hr>
+
+    <div>
+      <div class="section-label">Features</div>
+
+      <div class="setting-row" style="margin-bottom: 12px">
+        <div>
+          <div class="setting-label">Quality Badges</div>
+          <div class="setting-sub">Show 4K / 1080p / HEVC labels</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggleBadges" checked>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Block Ads</div>
+          <div class="setting-sub">Hide ad elements on page</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggleAds" checked>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+    </div>
+
+    <hr>
+
+    <div>
+      <div class="section-label">Shortcuts</div>
+      <div class="setting-row">
+        <span class="setting-sub">Open search</span>
+        <span><kbd>Ctrl</kbd> <kbd>K</kbd></span>
+      </div>
+      <div class="setting-row" style="margin-top: 6px">
+        <span class="setting-sub">Quick search</span>
+        <kbd>/</kbd>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-tip">v1.0.0</span>
+    <button class="reset-btn" id="resetBtn">Reset defaults</button>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    async function load() {
+      return new Promise(resolve => {
+        chrome.storage.local.get(['gridColumns','showBadges','hideAds'], result => {
+          resolve({
+            gridColumns: result.gridColumns ?? 4,
+            showBadges:  result.showBadges  ?? true,
+            hideAds:     result.hideAds     ?? true,
+          });
+        });
+      });
+    }
+
+    async function save(key, value) {
+      return new Promise(resolve => chrome.storage.local.set({ [key]: value }, resolve));
+    }
+
+    async function init() {
+      const settings = await load();
+
+      // Grid columns
+      document.querySelectorAll('.col-btn').forEach(btn => {
+        const cols = parseInt(btn.dataset.cols);
+        if (cols === settings.gridColumns) btn.classList.add('active');
+        else btn.classList.remove('active');
+
+        btn.addEventListener('click', async () => {
+          document.querySelectorAll('.col-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          await save('gridColumns', cols);
+          // Notify active tab
+          notifyTab({ action: 'setGridCols', cols });
+        });
+      });
+
+      // Badges toggle
+      $('toggleBadges').checked = settings.showBadges;
+      $('toggleBadges').addEventListener('change', async (e) => {
+        await save('showBadges', e.target.checked);
+        notifyTab({ action: 'setShowBadges', value: e.target.checked });
+      });
+
+      // Ads toggle
+      $('toggleAds').checked = settings.hideAds;
+      $('toggleAds').addEventListener('change', async (e) => {
+        await save('hideAds', e.target.checked);
+        notifyTab({ action: 'setHideAds', value: e.target.checked });
+      });
+
+      // Reset
+      $('resetBtn').addEventListener('click', async () => {
+        await chrome.storage.local.set({ gridColumns: 4, showBadges: true, hideAds: true });
+        init(); // re-render popup
+        notifyTab({ action: 'reset' });
+      });
+    }
+
+    function notifyTab(message) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, message).catch(() => {});
+        }
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>

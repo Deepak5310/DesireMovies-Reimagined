@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "DesireMovies Reimagined",
+  "version": "1.0.0",
+  "description": "Transforms DesireMovies into a modern streaming platform UI — Netflix-style grid, clean titles, quality badges, and glassmorphic design.",
+  "icons": {
+    "16":  "icons/icon16.png",
+    "32":  "icons/icon32.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "32":  "icons/icon32.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "DesireMovies Reimagined",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://1desiremovies.top/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://1desiremovies.top/*"
+      ],
+      "js": [
+        "modules/storage.js",
+        "modules/parser.js",
+        "modules/renderer.js",
+        "modules/search.js",
+        "modules/observer.js",
+        "content.js"
+      ],
+      "css": [
+        "redesign.css"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["redesign.css"],
+      "matches": ["https://1desiremovies.top/*"]
+    }
+  ]
+}
+
