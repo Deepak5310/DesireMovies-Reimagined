@@ -543,6 +543,7 @@ iframe[src*="googlesyndication"] {
 
 .dm-card--animate {
   animation: dmCardIn 0.4s var(--dm-ease) forwards;
+  will-change: opacity, transform;
 }
 
 @keyframes dmCardIn {

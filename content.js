@@ -389,7 +389,7 @@
         .filter((p) => p.link);
     },
 
-    extractPagination() {
+    _extractPaginationEl(scope) {
       const selectors = [
         ".mh-paging",
         ".pagination",
@@ -398,42 +398,32 @@
         ".wp-pagenavi",
       ];
       for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el) {
-          const links = [...el.querySelectorAll("a")].map((a) => ({
-            text: a.textContent.trim(),
-            href: a.href,
-          }));
-          const current = el.querySelector(".current, .page-numbers.current");
-          const currentPage = current
-            ? parseInt(current.textContent.trim()) || 1
-            : 1;
-          const nextLink = el.querySelector('a.next, a[rel="next"], .next a');
-          return {
-            links,
-            currentPage,
-            nextHref: nextLink ? nextLink.href : null,
-          };
-        }
+        const el = scope.querySelector(sel);
+        if (el) return el;
       }
-      return { links: [], currentPage: 1, nextHref: null };
+      return null;
+    },
+
+    extractPagination() {
+      const container = this._extractPaginationEl(document);
+      if (!container) return { links: [], currentPage: 1, nextHref: null };
+      const links = [...container.querySelectorAll("a")].map((a) => ({
+        text: a.textContent.trim(),
+        href: a.href,
+      }));
+      const current = container.querySelector(".current, .page-numbers.current");
+      const currentPage = current
+        ? parseInt(current.textContent.trim()) || 1
+        : 1;
+      const nextLink = container.querySelector('a.next, a[rel="next"], .next a');
+      return { links, currentPage, nextHref: nextLink ? nextLink.href : null };
     },
 
     extractPaginationFromDoc(doc) {
-      const selectors = [
-        ".mh-paging",
-        ".pagination",
-        ".nav-links",
-        ".wp-pagenavi",
-      ];
-      for (const sel of selectors) {
-        const el = doc.querySelector(sel);
-        if (el) {
-          const nextLink = el.querySelector('a.next, a[rel="next"], .next a');
-          return { nextHref: nextLink ? nextLink.href : null };
-        }
-      }
-      return null;
+      const container = this._extractPaginationEl(doc);
+      if (!container) return null;
+      const nextLink = container.querySelector('a.next, a[rel="next"], .next a');
+      return { nextHref: nextLink ? nextLink.href : null };
     },
 
     extractSiteLogo() {
@@ -489,7 +479,7 @@
         else if (/multi/i.test(a)) addBadge("Multi Audio", "Multi Audio");
       }
       if (post.subtitles) {
-        addBadge(/esub/i.test(post.subtitles) ? "ESubs" : "ESubs", "ESubs");
+        addBadge("ESubs", "ESubs");
       }
       return fragment;
     },
@@ -601,7 +591,7 @@
       return section;
     },
 
-    buildNavbar(navLinks, siteLogo) {
+    buildNavbar(navLinks, siteLogo, pageType = "") {
       const nav = el("nav", { className: "dm-navbar", id: "dm-navbar" });
       const left = el("div", { className: "dm-navbar__left" });
       const logoLink = el("a", {
@@ -647,8 +637,6 @@
       const dropdownMenu = el("div", { className: "dm-dropdown-menu" });
       const dropdownGrid = el("div", { className: "dm-dropdown-grid" });
 
-
-
       // Category links
       navLinks.forEach((link) => {
         const catLink = el("a", {
@@ -671,7 +659,7 @@
       dropdownLi.appendChild(dropdownMenu);
       navList.appendChild(dropdownLi);
 
-      // Touch events for mobile/tablet dropdown behavior
+      // Dropdown toggle
       dropdownBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         dropdownLi.classList.toggle("dm-dropdown--open");
@@ -696,7 +684,7 @@
         placeholder: "Search...",
         className: "dm-navbar__search-input",
       });
-      if (DMParser.detectPageType() === "search") {
+      if (pageType === "search") {
         searchInput.value =
           new URLSearchParams(window.location.search).get("s") || "";
       }
@@ -715,9 +703,6 @@
       nav.appendChild(left);
       nav.appendChild(center);
       nav.appendChild(right);
-
-
-
       return nav;
     },
 
@@ -821,7 +806,7 @@
 
     buildShell({ posts, navLinks, pagination, siteLogo, pageType, pageTitle }) {
       const app = el("div", { className: "dm-app", id: "dm-app" });
-      app.appendChild(this.buildNavbar(navLinks, siteLogo));
+      app.appendChild(this.buildNavbar(navLinks, siteLogo, pageType));
 
       const main = el("main", { className: "dm-main", id: "dm-main" });
       if (pageType === "category") {
@@ -864,11 +849,14 @@
 
       app.appendChild(main);
 
+      app.appendChild(this.buildFooter());
+      return app;
+    },
+
+    buildFooter() {
       const footer = el("footer", { className: "dm-footer" });
       footer.innerHTML = `<div class="dm-footer__inner"><div class="dm-footer__brand"><span class="dm-logo__desire">Desire</span><span class="dm-logo__movies">Movies</span><span class="dm-footer__tag">Reimagined</span></div><p class="dm-footer__note">UI redesigned by DesireMovies Reimagined Chrome Extension.</p></div>`;
-      app.appendChild(footer);
-
-      return app;
+      return footer;
     },
   };
 
@@ -1143,7 +1131,7 @@
       const app = el("div", { className: "dm-app", id: "dm-app" });
 
       app.appendChild(
-        DMRenderer.buildNavbar(navLinks, DMParser.extractSiteLogo()),
+        DMRenderer.buildNavbar(navLinks, DMParser.extractSiteLogo(), "single"),
       );
 
       const main = el("main", {
@@ -1210,56 +1198,27 @@
         metaCol.appendChild(badgeRow);
       }
 
-      if (releaseInfo.length > 0) {
-        const infoGrid = el("dl", { className: "dm-single__info-grid" });
-        const infoFull = [...releaseInfo];
-        if (parsed.year && !releaseInfo.find((r) => r.key === "Year"))
-          infoFull.unshift({ key: "Year", value: parsed.year });
-        if (parsed.type && !releaseInfo.find((r) => r.key === "Format"))
-          infoFull.push({ key: "Source", value: parsed.type });
-        if (parsed.season)
-          infoFull.push({ key: "Season", value: parsed.season });
+      // Build info grid — merge releaseInfo + any parsed fallback fields
+      const infoItems = releaseInfo.length > 0
+        ? (() => {
+            const full = [...releaseInfo];
+            if (parsed.year && !full.find((r) => r.key === "Year"))
+              full.unshift({ key: "Year", value: parsed.year });
+            if (parsed.type && !full.find((r) => r.key === "Format"))
+              full.push({ key: "Source", value: parsed.type });
+            if (parsed.season)
+              full.push({ key: "Season", value: parsed.season });
+            return full;
+          })()
+        : [
+            parsed.year && { key: "Year", value: parsed.year },
+            parsed.season && { key: "Season", value: parsed.season },
+            parsed.type && { key: "Source", value: parsed.type },
+            parsed.audio.length && { key: "Audio", value: parsed.audio.slice(0, 2).join(", ") },
+          ].filter(Boolean);
 
-        infoFull.forEach(({ key, value }) => {
-          infoGrid.appendChild(
-            el("dt", { className: "dm-single__info-key", textContent: key }),
-          );
-          const dd = el("dd", { className: "dm-single__info-val" });
-          if (key === "IMDb" && imdbId) {
-            const ratingLink = el("a", {
-              href: `https://www.imdb.com/title/${imdbId}/`,
-              target: "_blank",
-              rel: "noopener noreferrer",
-              className: "dm-single__imdb-link",
-              textContent: value,
-            });
-            dd.appendChild(ratingLink);
-          } else {
-            dd.textContent = value;
-          }
-          infoGrid.appendChild(dd);
-        });
-        metaCol.appendChild(infoGrid);
-      } else if (parsed.year || parsed.type || parsed.season) {
-        const infoGrid = el("dl", { className: "dm-single__info-grid" });
-        const items = [
-          parsed.year && { key: "Year", value: parsed.year },
-          parsed.season && { key: "Season", value: parsed.season },
-          parsed.type && { key: "Source", value: parsed.type },
-          parsed.audio.length && {
-            key: "Audio",
-            value: parsed.audio.slice(0, 2).join(", "),
-          },
-        ].filter(Boolean);
-        items.forEach(({ key, value }) => {
-          infoGrid.appendChild(
-            el("dt", { className: "dm-single__info-key", textContent: key }),
-          );
-          infoGrid.appendChild(
-            el("dd", { className: "dm-single__info-val", textContent: value }),
-          );
-        });
-        metaCol.appendChild(infoGrid);
+      if (infoItems.length > 0) {
+        metaCol.appendChild(this.buildInfoGrid(infoItems, imdbId));
       }
 
       if (catLinks.length > 0) {
@@ -1377,12 +1336,31 @@
       }
 
       app.appendChild(main);
-
-      const footer = el("footer", { className: "dm-footer" });
-      footer.innerHTML = `<div class="dm-footer__inner"><div class="dm-footer__brand"><span class="dm-logo__desire">Desire</span><span class="dm-logo__movies">Movies</span><span class="dm-footer__tag">Reimagined</span></div><p class="dm-footer__note">UI redesigned by DesireMovies Reimagined Chrome Extension.</p></div>`;
-      app.appendChild(footer);
-
+      app.appendChild(DMRenderer.buildFooter());
       return app;
+    },
+
+    buildInfoGrid(items, imdbId) {
+      const grid = el("dl", { className: "dm-single__info-grid" });
+      items.forEach(({ key, value }) => {
+        grid.appendChild(
+          el("dt", { className: "dm-single__info-key", textContent: key }),
+        );
+        const dd = el("dd", { className: "dm-single__info-val" });
+        if (key === "IMDb" && imdbId) {
+          dd.appendChild(el("a", {
+            href: `https://www.imdb.com/title/${imdbId}/`,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            className: "dm-single__imdb-link",
+            textContent: value,
+          }));
+        } else {
+          dd.textContent = value;
+        }
+        grid.appendChild(dd);
+      });
+      return grid;
     },
 
     async init() {
@@ -1430,9 +1408,10 @@
               );
 
               if (best) imdbId = best.id;
-              data.imdbId = imdbId;
             }
           }
+          // Store imdbId on data so buildDetailPage can create the clickable link
+          data.imdbId = imdbId;
 
           // Step 2: Fetch the real IMDb rating from the official ratings JSON endpoint
           if (imdbId) {
@@ -1524,10 +1503,6 @@
     animateCardsIn();
   }
 
-
-
-
-
   function initLoadMore() {
     const btn = document.querySelector("#dm-load-more");
     if (!btn) return;
@@ -1564,14 +1539,8 @@
 
         let addedCount = 0;
         newArticles.forEach((article, i) => {
-          const titleEl = article.querySelector(
-            '.entry-title a, h2.entry-title a, h3.entry-title a, a[rel="bookmark"]',
-          );
-          const link = titleEl?.href || "";
-          const rawTitleText =
-            titleEl?.textContent?.trim() ||
-            article.querySelector(".entry-title")?.textContent?.trim() ||
-            "";
+          const rawTitleText = DMParser.extractRawTitle(article);
+          const link = DMParser.extractPostLink(article);
 
           if (!link || !rawTitleText) return;
 
@@ -1579,7 +1548,7 @@
           const thumbnail = DMParser.extractThumbnail(article);
 
           const post = {
-            id: article.id || `dm-load-${Date.now()}-${i}`,
+            id: article.id || `dm-load-${i}`,
             rawTitle: rawTitleText,
             ...parsed,
             thumbnail,
