@@ -16,13 +16,8 @@
       "48":  "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "DesireMovies Reimagined",
-    "default_popup": "popup.html"
+    "default_title": "DesireMovies Reimagined"
   },
-  "permissions": [
-    "storage",
-    "activeTab"
-  ],
   "host_permissions": [
     "https://1desiremovies.top/*"
   ],
@@ -32,12 +27,6 @@
         "https://1desiremovies.top/*"
       ],
       "js": [
-        "modules/storage.js",
-        "modules/parser.js",
-        "modules/renderer.js",
-        "modules/search.js",
-        "modules/observer.js",
-        "modules/single.js",
         "content.js"
       ],
       "css": [
