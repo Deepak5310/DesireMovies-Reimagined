@@ -256,25 +256,21 @@
 
         let addedCount = 0;
         newArticles.forEach((article, i) => {
-          // Temporarily attach to our doc so parser can work
-          document.body.appendChild(article);
-          const rawTitle  = DMParser.parseTitle(article.querySelector?.('.entry-title')?.textContent?.trim() || '');
-          article.remove();
-
-          // Build a minimal post object from the fetched article
-          const titleEl   = doc.querySelector(`#${article.id} .entry-title a, #${article.id} h2.entry-title a, #${article.id} h3.entry-title a`);
-          const imgEl     = doc.querySelector(`#${article.id} img`);
-          const link      = titleEl?.href || '';
-          const rawTitleText = titleEl?.textContent?.trim() || '';
+          // Build a minimal post object directly from the detached article element
+          const titleEl = article.querySelector('.entry-title a, h2.entry-title a, h3.entry-title a, a[rel="bookmark"]');
+          const link = titleEl?.href || '';
+          const rawTitleText = titleEl?.textContent?.trim() || article.querySelector('.entry-title')?.textContent?.trim() || '';
 
           if (!link || !rawTitleText) return;
 
           const parsed = DMParser.parseTitle(rawTitleText);
+          const thumbnail = DMParser.extractThumbnail(article);
+
           const post = {
             id: article.id || `dm-load-${Date.now()}-${i}`,
             rawTitle: rawTitleText,
             ...parsed,
-            thumbnail: imgEl?.src || imgEl?.dataset?.src || '',
+            thumbnail,
             link,
             category: null,
             date: '',

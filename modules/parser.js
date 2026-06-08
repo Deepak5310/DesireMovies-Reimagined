@@ -144,16 +144,23 @@ window.DMParser = (() => {
     for (const sel of imgSelectors) {
       const img = article.querySelector(sel);
       if (img) {
-        // Prefer data-src (lazy load) over src
-        return img.dataset.src || img.dataset.lazySrc || img.src || '';
+        // Find the best URL out of lazy-load dataset or src (skipping tiny data URIs/placeholders)
+        const src = img.dataset.src || img.dataset.lazySrc || img.getAttribute('data-original') || img.src || '';
+        if (src && !src.startsWith('data:') && src.length > 5) {
+          return src;
+        }
       }
     }
-    // Try background-image on divs
+    // Try background-image on divs (only works if attached to DOM, otherwise safe fallback)
     const thumbDiv = article.querySelector('.mh-thumb, .post-thumb, .post-image, figure');
     if (thumbDiv) {
-      const bg = window.getComputedStyle(thumbDiv).backgroundImage;
-      const m = bg.match(/url\(["']?(.+?)["']?\)/);
-      if (m) return m[1];
+      try {
+        const bg = window.getComputedStyle(thumbDiv).backgroundImage;
+        const m = bg?.match(/url\(["']?(.+?)["']?\)/);
+        if (m) return m[1];
+      } catch (e) {
+        // detached element, getComputedStyle might fail
+      }
     }
     return '';
   }
@@ -337,6 +344,7 @@ window.DMParser = (() => {
     detectPageType,
     parseTitle,
     extractPosts,
+    extractThumbnail,
     extractNavLinks,
     extractPagination,
     extractPaginationFromDoc,
