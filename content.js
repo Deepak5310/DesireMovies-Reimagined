@@ -991,20 +991,21 @@
 
     extractDownloadSections(contentEl, out) {
       const allChildren = [
-        ...contentEl.querySelectorAll("p, h2, h3, h4, div, hr, table, center"),
-      ];
+        ...contentEl.children
+      ].filter(node => ["P", "H1", "H2", "H3", "H4", "H5", "H6", "DIV", "HR", "TABLE", "CENTER"].includes(node.tagName.toUpperCase()));
       let currentSection = null;
       const DOWNLOAD_LINK_RE = /download|GD|Gdrive|Magnet|Torrent|Direct/i;
       const QUALITY_RE = /\d{3,4}p|4K|HEVC|x265|x264|HC|Esub|Dual|Multi|MB|GB/i;
       const SECTION_HEADING_RE =
-        /version|untouched|encoded|print|cam|part\s*\d/i;
+        /version|untouched|encoded|print|cam|part|ep\b|episode|season|pack|zip|single\s*link/i;
 
       for (const node of allChildren) {
         const text = node.textContent?.trim() || "";
         if (!text) continue;
 
+        const tagUpper = node.tagName.toUpperCase();
         if (
-          (node.tagName === "P" || /^H[1-6]$/.test(node.tagName)) &&
+          (tagUpper === "P" || /^H[1-6]$/.test(tagUpper) || tagUpper === "CENTER") &&
           SECTION_HEADING_RE.test(text) &&
           text.length < 100
         ) {
@@ -1013,12 +1014,16 @@
           continue;
         }
 
-        if (node.tagName === "P" && QUALITY_RE.test(text) && text.length < 80) {
+        if (
+          (tagUpper === "P" || /^H[1-6]$/.test(tagUpper) || tagUpper === "CENTER") &&
+          QUALITY_RE.test(text) &&
+          text.length < 80
+        ) {
           if (!currentSection) {
             currentSection = { heading: "Downloads", items: [] };
             out.push(currentSection);
           }
-          const links = this.collectLinks(node, DOWNLOAD_LINK_RE);
+          const links = this.collectLinks(node, DOWNLOAD_LINK_RE, QUALITY_RE, SECTION_HEADING_RE);
           currentSection.items.push({ label: text, links });
           continue;
         }
@@ -1067,7 +1072,7 @@
       }
     },
 
-    collectLinks(node, re) {
+    collectLinks(node, re, qualityRe, sectionHeadingRe) {
       const links = [];
       if (node.tagName === "A" && re.test(node.textContent)) {
         links.push({
@@ -1087,7 +1092,14 @@
       let count = 0;
       while (sib && count < 3) {
         const sibText = sib.textContent?.trim() || "";
-        if (/version|heading|^::/i.test(sibText)) break;
+        if (
+          /version|heading|^::/i.test(sibText) ||
+          sib.tagName === "HR" ||
+          (qualityRe && qualityRe.test(sibText)) ||
+          (sectionHeadingRe && sectionHeadingRe.test(sibText))
+        ) {
+          break;
+        }
         sib.querySelectorAll("a[href]").forEach((a) => {
           if (re.test(a.textContent) || re.test(a.href)) {
             links.push({
