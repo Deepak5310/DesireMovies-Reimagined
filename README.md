@@ -41,6 +41,14 @@ A modern Chrome Extension that completely transforms the DesireMovies browsing e
 
 ---
 
+## 📸 Screenshots
+
+| Home Page | Movie Details |
+|------------|------------|
+| ![Home](docs/screenshots/home.png) | ![Details](docs/screenshots/details.png) |
+
+---
+
 ## 🏗 Architecture
 
 ```mermaid
@@ -152,6 +160,11 @@ DesireMovies-Reimagined/
 ├── gyanigurus.js
 ├── gdflix.js
 ├── redesign.css
+│
+├── docs/
+│   └── screenshots/
+│       ├── home.png
+│       └── details.png
 │
 └── icons/
     ├── 16.png
