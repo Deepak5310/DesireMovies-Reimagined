@@ -1716,18 +1716,18 @@
             }
 
             if (imdbId) {
-              const ratingsUrl = `https://p.media-imdb.com/static-content/documents/v1/title/${imdbId}/ratings%3Fjsonp=imdb.rating.run:imdb.api.title.ratings/data.json`;
+              const ratingsUrl = `https://www.imdb.com/title/${imdbId}/`;
               const ratingsRes = await bgFetch(ratingsUrl);
-              const ratingsText = ratingsRes?.text;
-              if (ratingsText) {
-                const ratingsMatch = ratingsText.match(
-                  /imdb\.rating\.run\((.+)\)/,
-                );
-                if (ratingsMatch) {
-                  const ratingData = JSON.parse(ratingsMatch[1]);
-                  const rating = ratingData?.resource?.rating;
-                  if (rating)
-                    imdbRating = `${parseFloat(rating).toFixed(1)}/10`;
+              const html = ratingsRes?.text;
+              if (html) {
+                const ratingMatch = html.match(/"aggregateRating"\s*:\s*\{[^}]*"ratingValue"\s*:\s*"?([\d.]+)"?/);
+                if (ratingMatch) {
+                  imdbRating = `${parseFloat(ratingMatch[1]).toFixed(1)}/10`;
+                } else {
+                  const fallbackMatch = html.match(/"ratingValue"\s*:\s*"?([\d.]+)"?/);
+                  if (fallbackMatch) {
+                    imdbRating = `${parseFloat(fallbackMatch[1]).toFixed(1)}/10`;
+                  }
                 }
               }
             }
