@@ -1,5 +1,5 @@
-// DesireMovies Reimagined — gdflix.dev Auto-Click
-// Auto-clicks the "Instant DL [10GBPS]" download button
+// DesireMovies Reimagined — new.gdflix.io Auto-Click
+// Auto-clicks the "Instant DL [10GBPS]" button (dynamically rendered)
 
 (function () {
   "use strict";
@@ -8,9 +8,19 @@
 
   function tryClickInstantDL() {
     if (done) return true;
-    // Match any anchor whose text contains "Instant DL"
+
+    // The button is an <a> containing a <b> with "Instant DL" text
+    // Try both: direct textContent match and querying the inner <b>
     const anchors = document.querySelectorAll("a");
     for (const a of anchors) {
+      // Check the <b> tag inside the anchor
+      const b = a.querySelector("b");
+      if (b && /instant\s*dl/i.test(b.textContent)) {
+        done = true;
+        a.click();
+        return true;
+      }
+      // Fallback: full anchor text
       if (/instant\s*dl/i.test(a.textContent)) {
         done = true;
         a.click();
@@ -21,7 +31,7 @@
   }
 
   function observe() {
-    // Try immediately — button may already be in DOM
+    // Button is JS-rendered — try immediately, then watch DOM
     if (tryClickInstantDL()) return;
 
     const observer = new MutationObserver(() => {
