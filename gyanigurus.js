@@ -5,8 +5,6 @@
 (function () {
   "use strict";
 
-  // Selector for the gdflix (or similar direct) link
-  const DIRECT_LINK_RE = /gdflix|gdtot|hubcloud|driveleech|drivebot/i;
 
   /**
    * Try to find and click the primary "Click Here To Open Links" button.
@@ -29,28 +27,48 @@
   }
 
   /**
-   * Try to find and click the best direct download link (gdflix / similar).
-   * Returns true if found and clicked.
+   * Priority order for direct download hosts.
+   * Index 0 = highest priority (clicked first).
+   * Add or reorder entries here to change preference.
+   */
+  const HOST_PRIORITY = [
+    "gdflix",       // 1st choice
+    "gdtot",        // 2nd
+    "driveleech",   // 3rd
+    "drivebot",     // 4th
+    "hubdrive",     // 5th
+    "hubcloud",     // 6th
+    "multicloud",   // 7th
+  ];
+
+  /** Returns the priority rank of a URL (lower = better). -1 means no match. */
+  function getLinkPriority(href) {
+    const lower = href.toLowerCase();
+    for (let i = 0; i < HOST_PRIORITY.length; i++) {
+      if (lower.includes(HOST_PRIORITY[i])) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Collect all direct-download links on the page, pick the highest-priority
+   * one, and click it. Returns true if a link was found and clicked.
    */
   function tryClickDirectLink() {
-    // Look for <a class="hover_a link"> with a matching href
-    const anchors = document.querySelectorAll("a.hover_a.link, a.link");
-    for (const a of anchors) {
-      if (DIRECT_LINK_RE.test(a.href)) {
-        a.click();
-        return true;
-      }
-    }
+    const candidates = [];
 
-    // Fallback: any anchor whose href matches the pattern
-    const all = document.querySelectorAll("a[href]");
-    for (const a of all) {
-      if (DIRECT_LINK_RE.test(a.href)) {
-        a.click();
-        return true;
-      }
-    }
-    return false;
+    // Primary selector — the site's own link class
+    document.querySelectorAll("a.hover_a.link, a.link, a[href]").forEach((a) => {
+      const rank = getLinkPriority(a.href);
+      if (rank !== -1) candidates.push({ el: a, rank });
+    });
+
+    if (candidates.length === 0) return false;
+
+    // Sort by rank ascending (lowest index = best)
+    candidates.sort((a, b) => a.rank - b.rank);
+    candidates[0].el.click();
+    return true;
   }
 
   /**
