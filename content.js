@@ -178,6 +178,24 @@
     return "#6b7280";
   }
 
+  // Recursive utility to replace all em-dashes (—) and en-dashes (–) with normal hyphens (-)
+  function replaceEmDashes(val) {
+    if (typeof val === "string") {
+      return val.replace(/—/g, "-").replace(/–/g, "-");
+    }
+    if (Array.isArray(val)) {
+      return val.map(replaceEmDashes);
+    }
+    if (val !== null && typeof val === "object") {
+      const res = {};
+      for (const [k, v] of Object.entries(val)) {
+        res[k] = replaceEmDashes(v);
+      }
+      return res;
+    }
+    return val;
+  }
+
   function openLightbox(src) {
     const lightbox = el("div", { className: "dm-lightbox" });
     const content = el("div", { className: "dm-lightbox__content" });
@@ -1272,6 +1290,7 @@
     },
 
     buildDetailPage(data, navLinks) {
+      data = replaceEmDashes(data);
       const imdbId = data.imdbId || null;
       const {
         rawTitle,
@@ -1318,10 +1337,30 @@
       hero.appendChild(posterWrap);
 
       const metaCol = el("div", { className: "dm-single__meta-col" });
-      metaCol.appendChild(
+      
+      // 1. Title Group
+      const titleGroup = el("div", { className: "dm-single__title-group" });
+      titleGroup.appendChild(
         el("h1", { className: "dm-single__title", textContent: detailTitle }),
       );
+      metaCol.appendChild(titleGroup);
 
+      // 2. Categories/Chips Row (placed right under Title)
+      if (catLinks.length > 0) {
+        const catRow = el("div", { className: "dm-single__cats" });
+        catLinks.forEach((c) => {
+          catRow.appendChild(
+            el("a", {
+              href: c.href,
+              className: "dm-chip dm-chip--sm",
+              textContent: c.text,
+            }),
+          );
+        });
+        metaCol.appendChild(catRow);
+      }
+
+      // 3. Plot paragraph
       const plotItem = releaseInfo.find((r) => r.key === "Plot");
       if (plotItem && plotItem.value) {
         metaCol.appendChild(
@@ -1329,7 +1368,7 @@
         );
       }
 
-      // Build info grid — merge releaseInfo + any parsed fallback fields
+      // 4. Detailed Info Grid (Year, Season, Language, Genres, Audio, IMDb, etc.)
       const infoItems =
         releaseInfo.length > 0
           ? (() => {
@@ -1351,26 +1390,6 @@
 
       if (infoItems.length > 0) {
         metaCol.appendChild(this.buildInfoGrid(infoItems, imdbId));
-      }
-
-      if (catLinks.length > 0) {
-        const catRow = el("div", { className: "dm-single__cats" });
-        catRow.appendChild(
-          el("span", {
-            className: "dm-single__cats-label",
-            textContent: "Categories:",
-          }),
-        );
-        catLinks.forEach((c) => {
-          catRow.appendChild(
-            el("a", {
-              href: c.href,
-              className: "dm-chip dm-chip--sm",
-              textContent: c.text,
-            }),
-          );
-        });
-        metaCol.appendChild(catRow);
       }
 
       hero.appendChild(metaCol);
@@ -1420,7 +1439,7 @@
               linksWrap.appendChild(
                 el("span", {
                   className: "dm-single__dl-nolink",
-                  textContent: "—",
+                  textContent: "-",
                 }),
               );
             }
