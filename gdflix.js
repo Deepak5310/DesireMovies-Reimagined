@@ -18,24 +18,25 @@
       if (b && /instant\s*dl/i.test(b.textContent)) {
         done = true;
         a.click();
-        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 500);
+        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
         return true;
       }
       // Fallback: full anchor text
       if (/instant\s*dl/i.test(a.textContent)) {
         done = true;
         a.click();
-        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 500);
+        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
         return true;
       }
     }
     return false;
   }
 
-  function observe() {
-    // Button is JS-rendered — try immediately, then watch DOM
+  function run() {
+    // 1. Try immediately
     if (tryClickInstantDL()) return;
 
+    // 2. Set up MutationObserver for JS-rendered button
     const observer = new MutationObserver(() => {
       if (tryClickInstantDL()) observer.disconnect();
     });
@@ -43,12 +44,8 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     // Safety timeout
-    setTimeout(() => observer.disconnect(), 30_000);
+    setTimeout(() => observer.disconnect(), 15_000);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", observe);
-  } else {
-    observe();
-  }
+  run();
 })();

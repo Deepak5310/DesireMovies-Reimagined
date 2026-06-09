@@ -5,15 +5,18 @@
 (function () {
   "use strict";
 
-  let done = false; // guard — ensure we only ever click gdflix once
+  let openBtnClicked = false;
+  let done = false;
 
   function tryClickOpenButton() {
+    if (openBtnClicked) return true;
     for (const btn of document.querySelectorAll("button")) {
       if (
         (btn.getAttribute("onclick") || "").includes("show_content_v") ||
         /click\s*here|open\s*link/i.test(btn.textContent)
       ) {
         btn.click();
+        openBtnClicked = true;
         return true;
       }
     }
@@ -26,37 +29,39 @@
     if (a) {
       done = true;
       a.click();
-      // Close this gyanigurus tab after gdflix opens
-      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 500);
+      // Close this gyanigurus tab after gdflix opens (reduced delay for performance)
+      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
       return true;
     }
     return false;
   }
 
-  function observe() {
-    let openBtnClicked = false;
+  function run() {
+    // 1. Check if gdflix is already there (unlikely, but safe check)
+    if (tryClickGdflix()) return;
 
+    // 2. Click the open button
+    tryClickOpenButton();
+
+    // 3. Check again immediately because click handler changes are often synchronous
+    if (tryClickGdflix()) return;
+
+    // 4. Fallback to MutationObserver if changes are asynchronous
     const observer = new MutationObserver(() => {
-      if (done) { observer.disconnect(); return; }
+      if (tryClickGdflix()) {
+        observer.disconnect();
+        return;
+      }
       if (!openBtnClicked) {
-        openBtnClicked = tryClickOpenButton();
-      } else {
-        if (tryClickGdflix()) observer.disconnect();
+        tryClickOpenButton();
       }
     });
 
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    // Try immediately if DOM is already ready
-    if (tryClickGdflix()) return;
-    tryClickOpenButton();
-
-    setTimeout(() => observer.disconnect(), 30_000);
+    // Safety timeout to prevent resource leak
+    setTimeout(() => observer.disconnect(), 15_000);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", observe);
-  } else {
-    observe();
-  }
+  run();
 })();

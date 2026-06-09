@@ -1241,6 +1241,10 @@
       const date =
         dateEl?.getAttribute("datetime") || dateEl?.textContent?.trim() || "";
 
+      if (!releaseInfo.some((info) => info.key === "IMDb")) {
+        releaseInfo.push({ key: "IMDb", value: "" });
+      }
+
       return {
         rawTitle,
         parsed,
@@ -1634,16 +1638,21 @@
           el("dt", { className: "dm-single__info-key", textContent: key }),
         );
         const dd = el("dd", { className: "dm-single__info-val" });
-        if (key === "IMDb" && imdbId) {
-          dd.appendChild(
-            el("a", {
-              href: `https://www.imdb.com/title/${imdbId}/`,
-              target: "_blank",
-              rel: "noopener noreferrer",
-              className: "dm-single__imdb-link",
-              textContent: value,
-            }),
-          );
+        if (key === "IMDb") {
+          dd.classList.add("dm-single__info-val--imdb");
+          if (value && imdbId) {
+            dd.appendChild(
+              el("a", {
+                href: `https://www.imdb.com/title/${imdbId}/`,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                className: "dm-single__imdb-link",
+                textContent: value,
+              }),
+            );
+          } else {
+            dd.textContent = value;
+          }
         } else {
           dd.textContent = value;
         }
@@ -1652,120 +1661,127 @@
       return grid;
     },
 
-    async init() {
-      const data = this.extractSinglePost();
+    async fetchAndUpdateImdbRating(data) {
+      try {
+        const queryTitle = data.parsed.cleanTitle;
+        const queryYear = data.parsed.year || "";
+        const targetYear = queryYear ? parseInt(queryYear) : null;
+        let imdbRating = null;
+        let imdbId = null;
 
-      // Fetch correct IMDb rating using IMDb Suggestions + Ratings APIs
-      if (data.parsed && data.parsed.cleanTitle) {
-        try {
-          const queryTitle = data.parsed.cleanTitle;
-          const queryYear = data.parsed.year || "";
-          const targetYear = queryYear ? parseInt(queryYear) : null;
-          let imdbRating = null;
+        const trimmedTitle = queryTitle.trim();
+        if (trimmedTitle) {
+          const firstChar = trimmedTitle.charAt(0).toLowerCase();
+          const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(trimmedTitle.toLowerCase())}.json`;
+          const suggestRes = await bgFetch(suggestUrl);
 
-          const trimmedTitle = queryTitle.trim();
-          if (trimmedTitle) {
-            // Step 1: Use IMDb's JSONP suggestion endpoint to find the correct IMDb ID.
-            // Query format: sg.media-imdb.com/suggests/{first_letter}/{title}.json
-            const firstChar = trimmedTitle.charAt(0).toLowerCase();
-            const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(trimmedTitle.toLowerCase())}.json`;
-            const suggestRes = await bgFetch(suggestUrl);
+          const jsonpText = suggestRes?.text;
+          if (jsonpText) {
+            const jsonpMatch = jsonpText.match(/^[^(]+\((.+)\)$/s);
+            if (jsonpMatch) {
+              const suggestData = JSON.parse(jsonpMatch[1]);
+              if (suggestData && suggestData.d && suggestData.d.length > 0) {
+                const queryTitleLower = trimmedTitle.toLowerCase();
 
-            // The response is JSONP: imdb$bandar({...})
-            const jsonpText = suggestRes?.text;
-            if (jsonpText) {
-              const jsonpMatch = jsonpText.match(/^[^(]+\((.+)\)$/s);
-              let imdbId = null;
-
-              if (jsonpMatch) {
-                const suggestData = JSON.parse(jsonpMatch[1]);
-                if (suggestData && suggestData.d && suggestData.d.length > 0) {
-                  const queryTitleLower = trimmedTitle.toLowerCase();
-
-                  // Find the best title match (exact name + year within ±1)
-                  let best = suggestData.d.find(
+                let best = suggestData.d.find(
+                  (item) =>
+                    item.id &&
+                    item.id.startsWith("tt") &&
+                    item.l &&
+                    item.l.toLowerCase() === queryTitleLower &&
+                    (!targetYear ||
+                      !item.y ||
+                      Math.abs(item.y - targetYear) <= 1),
+                );
+                if (!best)
+                  best = suggestData.d.find(
                     (item) =>
                       item.id &&
                       item.id.startsWith("tt") &&
                       item.l &&
-                      item.l.toLowerCase() === queryTitleLower &&
-                      (!targetYear ||
-                        !item.y ||
-                        Math.abs(item.y - targetYear) <= 1),
+                      item.l.toLowerCase() === queryTitleLower,
                   );
-                  // Fallback: any exact title match
-                  if (!best)
-                    best = suggestData.d.find(
-                      (item) =>
-                        item.id &&
-                        item.id.startsWith("tt") &&
-                        item.l &&
-                        item.l.toLowerCase() === queryTitleLower,
-                    );
-                  // Fallback: first movie/series result
-                  if (!best)
-                    best = suggestData.d.find(
-                      (item) =>
-                        item.id &&
-                        item.id.startsWith("tt") &&
-                        (item.qid === "movie" ||
-                          item.qid === "tvSeries" ||
-                          item.qid === "tvMiniSeries"),
-                    );
+                if (!best)
+                  best = suggestData.d.find(
+                    (item) =>
+                      item.id &&
+                      item.id.startsWith("tt") &&
+                      (item.qid === "movie" ||
+                        item.qid === "tvSeries" ||
+                        item.qid === "tvMiniSeries"),
+                  );
 
-                  if (best) imdbId = best.id;
-                }
+                if (best) imdbId = best.id;
               }
-              // Store imdbId on data so buildDetailPage can create the clickable link
-              data.imdbId = imdbId;
+            }
 
-              // Step 2: Fetch the real IMDb rating from the official ratings JSON endpoint
-              if (imdbId) {
-                const ratingsUrl = `https://p.media-imdb.com/static-content/documents/v1/title/${imdbId}/ratings%3Fjsonp=imdb.rating.run:imdb.api.title.ratings/data.json`;
-                const ratingsRes = await bgFetch(ratingsUrl);
-                const ratingsText = ratingsRes?.text;
-                if (ratingsText) {
-                  const ratingsMatch = ratingsText.match(
-                    /imdb\.rating\.run\((.+)\)/,
-                  );
-                  if (ratingsMatch) {
-                    const ratingData = JSON.parse(ratingsMatch[1]);
-                    const rating = ratingData?.resource?.rating;
-                    if (rating)
-                      imdbRating = `${parseFloat(rating).toFixed(1)}/10`;
-                  }
+            if (imdbId) {
+              const ratingsUrl = `https://p.media-imdb.com/static-content/documents/v1/title/${imdbId}/ratings%3Fjsonp=imdb.rating.run:imdb.api.title.ratings/data.json`;
+              const ratingsRes = await bgFetch(ratingsUrl);
+              const ratingsText = ratingsRes?.text;
+              if (ratingsText) {
+                const ratingsMatch = ratingsText.match(
+                  /imdb\.rating\.run\((.+)\)/,
+                );
+                if (ratingsMatch) {
+                  const ratingData = JSON.parse(ratingsMatch[1]);
+                  const rating = ratingData?.resource?.rating;
+                  if (rating)
+                    imdbRating = `${parseFloat(rating).toFixed(1)}/10`;
                 }
               }
             }
           }
-
-          // Step 3: Update the releaseInfo grid with the fetched rating
-          const imdbIndex = data.releaseInfo.findIndex(
-            (info) => info.key === "IMDb",
-          );
-          if (imdbRating) {
-            if (imdbIndex !== -1) {
-              data.releaseInfo[imdbIndex].value = imdbRating;
-            } else {
-              data.releaseInfo.push({ key: "IMDb", value: imdbRating });
-            }
-          } else {
-            // No rating found — remove the empty/incorrect IMDb row entirely
-            if (imdbIndex !== -1) data.releaseInfo.splice(imdbIndex, 1);
-          }
-        } catch (err) {
-          console.warn("[DM Reimagined] IMDb rating fetch failed:", err);
-          // On error, remove any garbage IMDb entry from the page
-          const imdbIndex = data.releaseInfo.findIndex(
-            (info) => info.key === "IMDb",
-          );
-          if (imdbIndex !== -1) data.releaseInfo.splice(imdbIndex, 1);
         }
-      }
 
+        const imdbValEl = document.querySelector(".dm-single__info-val--imdb");
+        if (imdbValEl) {
+          if (imdbRating && imdbId) {
+            imdbValEl.innerHTML = "";
+            imdbValEl.appendChild(
+              el("a", {
+                href: `https://www.imdb.com/title/${imdbId}/`,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                className: "dm-single__imdb-link",
+                textContent: imdbRating,
+              }),
+            );
+          } else if (imdbId && imdbValEl.textContent.trim() && imdbValEl.textContent.trim() !== "N/A") {
+            const currentRating = imdbValEl.textContent.trim();
+            imdbValEl.innerHTML = "";
+            imdbValEl.appendChild(
+              el("a", {
+                href: `https://www.imdb.com/title/${imdbId}/`,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                className: "dm-single__imdb-link",
+                textContent: currentRating,
+              }),
+            );
+          } else if (!imdbRating && (!imdbValEl.textContent.trim() || imdbValEl.textContent.trim() === "N/A")) {
+            const dt = imdbValEl.previousElementSibling;
+            if (dt && dt.classList.contains("dm-single__info-key")) {
+              dt.style.display = "none";
+            }
+            imdbValEl.style.display = "none";
+          }
+        }
+      } catch (err) {
+        console.warn("[DM Reimagined] IMDb rating fetch failed:", err);
+      }
+    },
+
+    async init() {
+      const data = this.extractSinglePost();
       const navLinks = DMParser.extractNavLinks();
       const app = this.buildDetailPage(data, navLinks);
       document.body.appendChild(app);
+
+      // Fetch correct IMDb rating asynchronously in the background
+      if (data.parsed && data.parsed.cleanTitle) {
+        this.fetchAndUpdateImdbRating(data);
+      }
     },
   };
 
