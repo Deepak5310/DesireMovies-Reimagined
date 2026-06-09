@@ -649,6 +649,7 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 12px;
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-r-lg); overflow: hidden;
+  max-width: 550px; /* Cap the width of the links block */
 }
 .dm-single__dl-group:last-child { margin-bottom: 0; }
 
@@ -660,42 +661,33 @@ a { color: inherit; text-decoration: none; }
   color: var(--dm-text-muted);
   text-transform: uppercase; letter-spacing: 0.6px;
 }
-.dm-single__dl-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-  padding: 16px;
+.dm-single__dl-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dm-border);
+  background: rgba(255,255,255,0.01);
 }
-.dm-single__dl-card {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--dm-border);
-  border-radius: var(--dm-r-md);
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.dm-single__dl-label { display: flex; align-items: center; gap: 6px; }
-.dm-single__dl-links { display: flex; flex-direction: column; gap: 6px; }
+.dm-single__dl-row:last-child { border-bottom: none; }
+.dm-single__dl-label { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.dm-single__dl-links { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .dm-single__dl-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 8px 16px; border-radius: var(--dm-r-pill);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px; border-radius: var(--dm-r-pill);
   font-size: 12px; font-weight: 600;
   background: var(--dm-bg-hover);
   color: var(--dm-text-sub);
   border: 1px solid var(--dm-border);
   text-decoration: none;
   transition: background var(--dm-fast), color var(--dm-fast), border-color var(--dm-fast);
-  width: 100%;
 }
 .dm-single__dl-btn:hover {
   background: var(--dm-accent-dim);
   color: var(--dm-accent);
-  border-color: rgba(6, 182, 212, 0.3);
+  border-color: rgba(6,182,212,0.3);
 }
-.dm-single__dl-empty { font-size: 12px; color: var(--dm-text-muted); padding: 16px; text-align: center; }
-.dm-single__dl-nolink { font-size: 12px; color: var(--dm-text-muted); padding: 6px 0; text-align: center; width: 100%; }
+.dm-single__dl-empty { font-size: 12px; color: var(--dm-text-muted); padding: 12px 16px; }
+.dm-single__dl-nolink { font-size: 12px; color: var(--dm-text-muted); padding: 6px 0; }
 
 /* ═══════════════════════════════════════════════════════════
    SCREENSHOTS

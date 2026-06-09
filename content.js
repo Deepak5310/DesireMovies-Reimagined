@@ -1421,9 +1421,8 @@
               }),
             );
           } else {
-            const grid = el("div", { className: "dm-single__dl-grid" });
             section.items.forEach((item) => {
-              const card = el("div", { className: "dm-single__dl-card" });
+              const row = el("div", { className: "dm-single__dl-row" });
               const label = el("div", { className: "dm-single__dl-label" });
               label.appendChild(
                 el("span", {
@@ -1432,7 +1431,7 @@
                   textContent: item.label,
                 }),
               );
-              card.appendChild(label);
+              row.appendChild(label);
 
               const linksWrap = el("div", { className: "dm-single__dl-links" });
               if (item.links.length === 0) {
@@ -1454,10 +1453,9 @@
                   linksWrap.appendChild(a);
                 });
               }
-              card.appendChild(linksWrap);
-              grid.appendChild(card);
+              row.appendChild(linksWrap);
+              group.appendChild(row);
             });
-            group.appendChild(grid);
           }
           dlSection.appendChild(group);
         });
