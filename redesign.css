@@ -738,8 +738,8 @@ html.dm-extension-active body #dm-app .dm-single-main,
 ══════════════════════════════════════════════════════════════ */
 .dm-single__ss-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
 }
 .dm-single__ss-wrap {
   border-radius: var(--dm-r-md); overflow: hidden;
@@ -747,10 +747,7 @@ html.dm-extension-active body #dm-app .dm-single-main,
 }
 .dm-single__ss-img {
   width: 100%; height: 100%; object-fit: cover; display: block;
-  transition: transform var(--dm-base) var(--dm-ease);
-  cursor: pointer;
 }
-.dm-single__ss-img:hover { transform: scale(1.04); }
 
 
 
