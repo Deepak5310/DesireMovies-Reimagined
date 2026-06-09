@@ -1294,6 +1294,7 @@
             /^H[1-6]$/.test(tagUpper) ||
             tagUpper === "CENTER") &&
           QUALITY_RE.test(text) &&
+          !DOWNLOAD_LINK_RE.test(text) &&
           text.length < 80
         ) {
           if (!currentSection) {
@@ -1546,7 +1547,9 @@
               }),
             );
           } else {
-            section.items.forEach((item) => {
+            section.items
+              .filter((item) => !(item.links.length === 0 && /download/i.test(item.label)))
+              .forEach((item) => {
               const row = el("div", { className: "dm-single__dl-row" });
               const label = el("div", { className: "dm-single__dl-label" });
               label.appendChild(
