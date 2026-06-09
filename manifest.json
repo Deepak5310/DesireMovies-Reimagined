@@ -22,12 +22,12 @@
     "service_worker": "background.js"
   },
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "https://1desiremovies.top/*",
     "https://sg.media-imdb.com/*",
-    "https://p.media-imdb.com/*",
     "https://www.imdb.com/*",
     "https://gyanigurus.xyz/*",
     "https://new.gdflix.io/*"

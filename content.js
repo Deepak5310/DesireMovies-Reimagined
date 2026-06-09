@@ -91,25 +91,32 @@
     return bestUrl || parts[0]?.split(/\s+/)[0] || "";
   }
 
-  async function bgFetch(url, options = {}) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { action: "fetch", url, options },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          if (response && response.success) {
-            resolve(response.data);
-          } else {
-            reject(
-              new Error(response ? response.error : "Background fetch failed"),
-            );
-          }
-        },
-      );
+  function sendBgMessage(action, payload = {}) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action, payload }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(response);
+        }
+      });
     });
+  }
+
+  async function bgFetch(url, options = {}) {
+    const response = await sendBgMessage("fetch", { url, options });
+    if (response?.success) {
+      return response.data;
+    }
+    throw new Error(response?.error || "Background fetch failed");
+  }
+
+  function queryText(parent, selector) {
+    return parent.querySelector(selector)?.textContent?.trim() || "";
+  }
+
+  function queryAttr(parent, selector, attr) {
+    return parent.querySelector(selector)?.getAttribute(attr) || "";
   }
 
   // ── Shared Constants ──
@@ -132,18 +139,9 @@
     token: c,
     regex: new RegExp(`\\b${c.replace(".", "\\.")}\\b`, "i"),
   }));
-  const QUALITY_TOKENS_RE = new RegExp(
-    `\\b(${QUALITY_TOKENS.join("|")})\\b`,
-    "gi",
-  );
-  const CODEC_TOKENS_RE = new RegExp(
-    `\\b(${CODEC_TOKENS.map((c) => c.replace(".", "\\.")).join("|")})\\b`,
-    "gi",
-  );
+
   const TYPE_RE =
     /\b(WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip|AMZN|NF|DSNP|HMAX|ATVP|SonyLIV|ZEE5|HOTSTAR|JioCinema)\b/i;
-  const TYPE_CLEAN_RE =
-    /\b(WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip)\b/gi;
   const SUB_RE = /\b(ESubs?|HSubs?|Subs?|Subtitles?|Multi[-\s]?Subs?)\b/i;
   const AUDIO_PATTERNS = [
     /Dual\s*Audio/i,
@@ -166,8 +164,9 @@
     /DD5\.1/i,
     /Atmos/i,
   ];
-  const AUDIO_CLEAN_RE =
-    /\b(ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|Marathi|Bengali|Punjabi|Kannada|Bhojpuri|Gujarati|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG)\b/gi;
+
+  // Single precompiled regex for clean title parsing
+  const CLEAN_TITLE_RE = /\[.*?\]|\(.*?\)|\|.*$|\b(?:4K|2160p|1080p|720p|480p|360p|x265|x264|HEVC|AVC|H\.264|H\.265|WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip|ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|Marathi|Bengali|Punjabi|Kannada|Bhojpuri|Gujarati|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG)\b|[\[\](){}|]/gi;
 
   // Shared helper: compute display title from a post object
   function displayTitle(post) {
@@ -275,14 +274,7 @@
       const audio = [...audioSet];
 
       let cleanTitle = working
-        .replace(/\[.*?\]/g, "")
-        .replace(/\(.*?\)/g, "")
-        .replace(/\|.*$/g, "")
-        .replace(QUALITY_TOKENS_RE, "")
-        .replace(CODEC_TOKENS_RE, "")
-        .replace(TYPE_CLEAN_RE, "")
-        .replace(AUDIO_CLEAN_RE, "")
-        .replace(/[\[\](){}|]/g, "")
+        .replace(CLEAN_TITLE_RE, "")
         .replace(/\s{2,}/g, " ")
         .replace(/[-–—]\s*$/, "")
         .trim();
@@ -381,8 +373,8 @@
         'a[rel="bookmark"]',
       ];
       for (const sel of selectors) {
-        const a = article.querySelector(sel);
-        if (a && a.href) return a.href;
+        const href = queryAttr(article, sel, "href");
+        if (href) return href;
       }
       return "";
     },
@@ -397,8 +389,8 @@
         ".mh-excerpt-block h2",
       ];
       for (const sel of selectors) {
-        const el = article.querySelector(sel);
-        if (el) return el.textContent.trim();
+        const val = queryText(article, sel);
+        if (val) return val;
       }
       return "";
     },
@@ -411,8 +403,8 @@
         ".post-categories a",
       ];
       for (const sel of selectors) {
-        const el = article.querySelector(sel);
-        if (el) return { text: el.textContent.trim(), href: el.href };
+        const a = article.querySelector(sel);
+        if (a?.href) return { text: a.textContent.trim(), href: a.href };
       }
       return null;
     },
@@ -1483,12 +1475,7 @@
                       a.style.pointerEvents = "none";
 
                       try {
-                        const response = await new Promise((resolve) => {
-                          chrome.runtime.sendMessage(
-                            { action: "bypass_gyanigurus", url: link.href },
-                            (res) => resolve(res)
-                          );
-                        });
+                        const response = await sendBgMessage("bypass_gyanigurus", { url: link.href });
 
                         if (response && response.success && response.gdflixUrl) {
                           window.open(response.gdflixUrl, "_blank");
@@ -1596,13 +1583,10 @@
         const trimmedTitle = queryTitle.trim();
         if (trimmedTitle) {
           const cacheKey = `imdb_${trimmedTitle.toLowerCase()}`;
-          const cached = await new Promise((resolve) => {
-            chrome.storage.local.get([cacheKey], (result) => {
-              resolve(result[cacheKey]);
-            });
-          });
+          const result = await chrome.storage.local.get(cacheKey);
+          const cached = result[cacheKey];
 
-          if (cached && cached.rating && cached.id) {
+          if (cached?.rating && cached?.id) {
             const imdbValEl = document.querySelector(".dm-single__info-val--imdb");
             if (imdbValEl) {
               imdbValEl.innerHTML = "";
@@ -1628,7 +1612,7 @@
             const jsonpMatch = jsonpText.match(/^[^(]+\((.+)\)$/s);
             if (jsonpMatch) {
               const suggestData = JSON.parse(jsonpMatch[1]);
-              if (suggestData && suggestData.d && suggestData.d.length > 0) {
+              if (suggestData?.d?.length > 0) {
                 const queryTitleLower = trimmedTitle.toLowerCase();
 
                 let best = suggestData.d.find(
@@ -1683,7 +1667,7 @@
 
           if (imdbId && imdbRating) {
             chrome.storage.local.set({
-              [cacheKey]: { rating: imdbRating, id: imdbId }
+              [cacheKey]: { rating: imdbRating, id: imdbId, timestamp: Date.now() }
             });
           }
         }
@@ -1730,12 +1714,13 @@
       const data = this.extractSinglePost();
       const navLinks = DMParser.extractNavLinks();
       const app = this.buildDetailPage(data, navLinks);
-      document.body.appendChild(app);
-
-      // Fetch correct IMDb rating asynchronously in the background
-      if (data.parsed && data.parsed.cleanTitle) {
-        this.fetchAndUpdateImdbRating(data);
-      }
+      requestAnimationFrame(() => {
+        document.body.appendChild(app);
+        // Fetch correct IMDb rating asynchronously in the background
+        if (data.parsed?.cleanTitle) {
+          this.fetchAndUpdateImdbRating(data);
+        }
+      });
     },
   };
 
@@ -1775,10 +1760,11 @@
       pageType,
       pageTitle,
     });
-    document.body.appendChild(app);
-
-    initLoadMore();
-    animateCardsIn();
+    requestAnimationFrame(() => {
+      document.body.appendChild(app);
+      initLoadMore();
+      animateCardsIn();
+    });
   }
 
   function initLoadMore() {
@@ -1853,10 +1839,12 @@
   }
 
   function animateCardsIn() {
-    const cards = document.querySelectorAll(".dm-card");
-    cards.forEach((card, i) => {
-      card.style.setProperty("--delay", `${Math.min(i * 30, 600)}ms`);
-      card.classList.add("dm-card--animate");
+    requestAnimationFrame(() => {
+      const cards = document.querySelectorAll(".dm-card");
+      cards.forEach((card, i) => {
+        card.style.setProperty("--delay", `${Math.min(i * 30, 600)}ms`);
+        card.classList.add("dm-card--animate");
+      });
     });
   }
 

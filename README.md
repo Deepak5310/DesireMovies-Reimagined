@@ -2,6 +2,8 @@
 
 **DesireMovies Reimagined** is a high-performance Google Chrome extension (Manifest V3) designed to transform the DesireMovies web experience. It replaces the legacy, ad-heavy, and cluttered layout with a premium, glassmorphic Netflix-inspired user interface, while offering a dual-layer headless and automated link bypass engine.
 
+> ⚠️ **Note**: If you find anything broken, please check the target site domains, as they change frequently.
+
 ---
 
 ## 📐 Architecture Overview
@@ -10,12 +12,12 @@ The extension coordinates background service workers, content scripts, and page-
 
 ```mermaid
 graph TD
-    subgraph DesireMovies Page
+    subgraph "DesireMovies Page"
         A[User Clicks Download Button] -->|Intercept Click| B[Show 'Bypassing...' Spinner]
         B -->|Message: bypass_gyanigurus| C[background.js]
     end
 
-    subgraph background.js (Service Worker)
+    subgraph "background.js (Service Worker)"
         C -->|1. Headless GET| D[gyanigurus.xyz]
         D -->|Extract Form Nonces & Inputs| E[Prepare URLSearchParams]
         E -->|2. Headless POST| F[gyanigurus.xyz]
@@ -24,7 +26,7 @@ graph TD
         G -->|No / Fail| I[Open gyanigurus.xyz Fallback Tab]
     end
 
-    subgraph gyanigurus.xyz Tab (Fallback)
+    subgraph "gyanigurus.xyz Tab (Fallback)"
         I -->|shield.js MAIN Context| J[Override window.open / Suppress Ads]
         I -->|gyanigurus.js ISOLATED Context| K[Auto-Click Form Button]
         K -->|MutationObserver| L[Click gdflix Link]
@@ -32,7 +34,7 @@ graph TD
         L --> H
     end
 
-    subgraph new.gdflix.io Tab
+    subgraph "new.gdflix.io Tab"
         H -->|gdflix.js ISOLATED Context| N[Auto-Click Instant DL Button]
         N -->|Message: close_tab| O[Close gdflix Tab after 200ms]
     end

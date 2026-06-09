@@ -5,9 +5,17 @@
   "use strict";
 
   let done = false;
+  let cachedButton = null;
 
   function tryClickInstantDL() {
     if (done) return true;
+
+    if (cachedButton) {
+      done = true;
+      cachedButton.click();
+      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
+      return true;
+    }
 
     // The button is an <a> containing a <b> with "Instant DL" text
     // Try both: direct textContent match and querying the inner <b>
@@ -16,6 +24,7 @@
       // Check the <b> tag inside the anchor
       const b = a.querySelector("b");
       if (b && /instant\s*dl/i.test(b.textContent)) {
+        cachedButton = a;
         done = true;
         a.click();
         setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
@@ -23,6 +32,7 @@
       }
       // Fallback: full anchor text
       if (/instant\s*dl/i.test(a.textContent)) {
+        cachedButton = a;
         done = true;
         a.click();
         setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);

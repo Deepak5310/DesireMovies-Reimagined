@@ -308,6 +308,9 @@ html.dm-extension-active body #dm-app .dm-single-main,
     box-shadow var(--dm-base) var(--dm-ease);
   opacity: 0;
   cursor: pointer;
+  contain: layout style paint;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 340px;
 }
 .dm-card:hover {
   transform: translateY(-4px);
@@ -795,8 +798,3 @@ html.dm-extension-active body #dm-app .dm-single-main,
 @media (max-width: 400px) {
   .dm-grid { grid-template-columns: 1fr; }
 }
-
-@keyframes dmSpin {
-  100% { transform: rotate(360deg); }
-}
-

@@ -8,6 +8,14 @@
   let openBtnClicked = false;
   let done = false;
 
+  function debounce(fn, delay) {
+    let timeout;
+    return function (...args) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn.apply(this, args), delay);
+    };
+  }
+
   function tryClickOpenButton() {
     if (openBtnClicked) return true;
     for (const btn of document.querySelectorAll("button")) {
@@ -46,8 +54,8 @@
     // 3. Check again immediately because click handler changes are often synchronous
     if (tryClickGdflix()) return;
 
-    // 4. Fallback to MutationObserver if changes are asynchronous
-    const observer = new MutationObserver(() => {
+    // 4. Fallback to MutationObserver if changes are asynchronous (debounced to save CPU)
+    const debouncedCallback = debounce(() => {
       if (tryClickGdflix()) {
         observer.disconnect();
         return;
@@ -55,8 +63,9 @@
       if (!openBtnClicked) {
         tryClickOpenButton();
       }
-    });
+    }, 150);
 
+    const observer = new MutationObserver(debouncedCallback);
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     // Safety timeout to prevent resource leak
