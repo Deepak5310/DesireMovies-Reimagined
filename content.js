@@ -51,9 +51,6 @@
       "data-lazy",
       "data-lazysrc",
       "data-original-src",
-      "data-full-url",
-      "data-large-file",
-      "data-medium-large",
     ];
     for (const attr of attrs) {
       const val = img.getAttribute(attr);
@@ -96,18 +93,128 @@
 
   async function bgFetch(url, options = {}) {
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ action: "fetch", url, options }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
-        }
-        if (response && response.success) {
-          resolve(response.data);
-        } else {
-          reject(new Error(response ? response.error : "Background fetch failed"));
-        }
-      });
+      chrome.runtime.sendMessage(
+        { action: "fetch", url, options },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (response && response.success) {
+            resolve(response.data);
+          } else {
+            reject(
+              new Error(response ? response.error : "Background fetch failed"),
+            );
+          }
+        },
+      );
     });
+  }
+
+  // ── Shared Constants ──
+  const ARTICLE_SELECTORS = [
+    "article.post",
+    "article.type-post",
+    'article[id^="post-"]',
+    ".mh-posts article",
+    "#mh-content article",
+  ];
+
+  // Hoisted regex constants for parseTitle — avoids recompilation on every call
+  const QUALITY_TOKENS = ["4K", "2160p", "1080p", "720p", "480p", "360p"];
+  const CODEC_TOKENS = ["x265", "x264", "HEVC", "AVC", "H.264", "H.265"];
+  const QUALITY_REGEXES = QUALITY_TOKENS.map((q) => ({
+    token: q,
+    regex: new RegExp(`\\b${q}\\b`, "i"),
+  }));
+  const CODEC_REGEXES = CODEC_TOKENS.map((c) => ({
+    token: c,
+    regex: new RegExp(`\\b${c.replace(".", "\\.")}\\b`, "i"),
+  }));
+  const QUALITY_TOKENS_RE = new RegExp(
+    `\\b(${QUALITY_TOKENS.join("|")})\\b`,
+    "gi",
+  );
+  const CODEC_TOKENS_RE = new RegExp(
+    `\\b(${CODEC_TOKENS.map((c) => c.replace(".", "\\.")).join("|")})\\b`,
+    "gi",
+  );
+  const TYPE_RE =
+    /\b(WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip|AMZN|NF|DSNP|HMAX|ATVP|SonyLIV|ZEE5|HOTSTAR|JioCinema)\b/i;
+  const TYPE_CLEAN_RE =
+    /\b(WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip)\b/gi;
+  const SUB_RE = /\b(ESubs?|HSubs?|Subs?|Subtitles?|Multi[-\s]?Subs?)\b/i;
+  const AUDIO_PATTERNS = [
+    /Dual\s*Audio/i,
+    /Multi\s*Audio/i,
+    /Hindi\s*ORG(?:inal)?/i,
+    /Hindi(?:\s*\+\s*\w+)*/i,
+    /Tamil(?:\s*\+\s*\w+)*/i,
+    /Telugu(?:\s*\+\s*\w+)*/i,
+    /Malayalam/i,
+    /English/i,
+    /Korean/i,
+    /DD\s*[\d.]+/i,
+    /DDP\s*[\d.]+/i,
+    /DD5\.1/i,
+    /Atmos/i,
+  ];
+  const AUDIO_CLEAN_RE =
+    /\b(ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG)\b/gi;
+
+  // Shared helper: compute display title from a post object
+  function displayTitle(post) {
+    return post.cleanTitle || post.rawTitle.split(/[\[(|]/)[0].trim();
+  }
+
+  // Shared helper: quality label → color (used by both DMRenderer and DMSingle)
+  function getQualityColor(label) {
+    if (/4K|2160/i.test(label)) return "#a855f7";
+    if (/1080/i.test(label)) return "#3b82f6";
+    if (/720/i.test(label)) return "#22c55e";
+    if (/480/i.test(label)) return "#f59e0b";
+    if (/HEVC|x265/i.test(label)) return "#06b6d4";
+    return "#6b7280";
+  }
+
+  function openLightbox(src) {
+    const lightbox = el("div", { className: "dm-lightbox" });
+    const content = el("div", { className: "dm-lightbox__content" });
+    const img = el("img", {
+      src,
+      className: "dm-lightbox__img",
+      alt: "Screenshot",
+    });
+    const closeBtn = el("button", {
+      className: "dm-lightbox__close",
+      title: "Close",
+    });
+    closeBtn.innerHTML = `<svg class="dm-icon-close" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>`;
+
+    content.appendChild(img);
+    content.appendChild(closeBtn);
+    lightbox.appendChild(content);
+
+    const closeLightbox = () => {
+      lightbox.classList.add("dm-lightbox--closing");
+      setTimeout(() => lightbox.remove(), 200);
+      document.removeEventListener("keydown", handleEsc);
+    };
+
+    const handleEsc = (e) => {
+      if (e.key === "Escape") closeLightbox();
+    };
+
+    lightbox.addEventListener("click", (e) => {
+      if (e.target === lightbox || e.target === content) {
+        closeLightbox();
+      }
+    });
+
+    closeBtn.addEventListener("click", closeLightbox);
+    document.addEventListener("keydown", handleEsc);
+    document.body.appendChild(lightbox);
   }
 
   // ── 2. DOM Extraction & Title Parser ──
@@ -157,43 +264,24 @@
       const episode = epMatch ? epMatch[1] : "";
       if (epMatch) working = working.replace(epMatch[0], "").trim();
 
-      const qualityTokens = ["4K", "2160p", "1080p", "720p", "480p", "360p"];
-      const quality = qualityTokens.filter((q) =>
-        new RegExp(q, "i").test(working),
-      );
+      const quality = [];
+      for (const item of QUALITY_REGEXES) {
+        if (item.regex.test(working)) quality.push(item.token);
+      }
 
-      const codecTokens = ["x265", "x264", "HEVC", "AVC", "H.264", "H.265"];
-      const codec = codecTokens.filter((c) =>
-        new RegExp(c.replace(".", "\\."), "i").test(working),
-      );
+      const codec = [];
+      for (const item of CODEC_REGEXES) {
+        if (item.regex.test(working)) codec.push(item.token);
+      }
 
-      const subMatch = working.match(
-        /\b(ESubs?|HSubs?|Subs?|Subtitles?|Multi[-\s]?Subs?)\b/i,
-      );
+      const subMatch = working.match(SUB_RE);
       const subtitles = subMatch ? subMatch[1] : "";
 
-      const typeMatch = working.match(
-        /\b(WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip|AMZN|NF|DSNP|HMAX|ATVP|SonyLIV|ZEE5|HOTSTAR|JioCinema)\b/i,
-      );
+      const typeMatch = working.match(TYPE_RE);
       const type = typeMatch ? typeMatch[1] : "";
 
-      const audioPatterns = [
-        /Dual\s*Audio/i,
-        /Multi\s*Audio/i,
-        /Hindi\s*ORG(?:inal)?/i,
-        /Hindi(?:\s*\+\s*\w+)*/i,
-        /Tamil(?:\s*\+\s*\w+)*/i,
-        /Telugu(?:\s*\+\s*\w+)*/i,
-        /Malayalam/i,
-        /English/i,
-        /Korean/i,
-        /DD\s*[\d.]+/i,
-        /DDP\s*[\d.]+/i,
-        /DD5\.1/i,
-        /Atmos/i,
-      ];
       const audioSet = new Set();
-      for (const pat of audioPatterns) {
+      for (const pat of AUDIO_PATTERNS) {
         const m = working.match(pat);
         if (m) audioSet.add(m[0].trim());
       }
@@ -203,22 +291,10 @@
         .replace(/\[.*?\]/g, "")
         .replace(/\(.*?\)/g, "")
         .replace(/\|.*$/g, "")
-        .replace(new RegExp(`\\b(${qualityTokens.join("|")})\\b`, "gi"), "")
-        .replace(
-          new RegExp(
-            `\\b(${codecTokens.map((c) => c.replace(".", "\\.")).join("|")})\\b`,
-            "gi",
-          ),
-          "",
-        )
-        .replace(
-          /\b(WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip)\b/gi,
-          "",
-        )
-        .replace(
-          /\b(ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG)\b/gi,
-          "",
-        )
+        .replace(QUALITY_TOKENS_RE, "")
+        .replace(CODEC_TOKENS_RE, "")
+        .replace(TYPE_CLEAN_RE, "")
+        .replace(AUDIO_CLEAN_RE, "")
         .replace(/[\[\](){}|]/g, "")
         .replace(/\s{2,}/g, " ")
         .replace(/[-–—]\s*$/, "")
@@ -261,7 +337,11 @@
             const href = a.href;
 
             // Skip "Desiremovies Home" to avoid redundancy in nav and category bars
-            if (/desiremovies\s+home/i.test(text) || text.toLowerCase() === "home") return;
+            if (
+              /desiremovies\s+home/i.test(text) ||
+              text.toLowerCase() === "home"
+            )
+              return;
 
             // Normalize brackets into parentheses for consistent labeling
             text = text.replace(/\[([^\]]+)\]/g, "($1)");
@@ -287,13 +367,8 @@
       for (const sel of imgSelectors) {
         const img = article.querySelector(sel);
         if (img) {
-          const src =
-            img.dataset.src ||
-            img.dataset.lazySrc ||
-            img.getAttribute("data-original") ||
-            img.src ||
-            "";
-          if (src && !src.startsWith("data:") && src.length > 5) return src;
+          const src = getImgSrc(img);
+          if (src) return src;
         }
       }
       const thumbDiv = article.querySelector(
@@ -356,15 +431,8 @@
     },
 
     extractPosts() {
-      const articleSelectors = [
-        "article.post",
-        "article.type-post",
-        'article[id^="post-"]',
-        ".mh-posts article",
-        "#mh-content article",
-      ];
       let articles = [];
-      for (const sel of articleSelectors) {
+      for (const sel of ARTICLE_SELECTORS) {
         articles = [...document.querySelectorAll(sel)];
         if (articles.length > 0) break;
       }
@@ -411,26 +479,25 @@
         text: a.textContent.trim(),
         href: a.href,
       }));
-      const current = container.querySelector(".current, .page-numbers.current");
+      const current = container.querySelector(
+        ".current, .page-numbers.current",
+      );
       const currentPage = current
         ? parseInt(current.textContent.trim()) || 1
         : 1;
-      const nextLink = container.querySelector('a.next, a[rel="next"], .next a');
+      const nextLink = container.querySelector(
+        'a.next, a[rel="next"], .next a',
+      );
       return { links, currentPage, nextHref: nextLink ? nextLink.href : null };
     },
 
     extractPaginationFromDoc(doc) {
       const container = this._extractPaginationEl(doc);
       if (!container) return null;
-      const nextLink = container.querySelector('a.next, a[rel="next"], .next a');
-      return { nextHref: nextLink ? nextLink.href : null };
-    },
-
-    extractSiteLogo() {
-      const logoImg = document.querySelector(
-        ".custom-logo, #mh-header img.logo, .mh-header-inner img, .site-logo img, header img",
+      const nextLink = container.querySelector(
+        'a.next, a[rel="next"], .next a',
       );
-      return logoImg ? logoImg.src : null;
+      return { nextHref: nextLink ? nextLink.href : null };
     },
   };
 
@@ -510,9 +577,6 @@
       }
 
       const overlay = el("div", { className: "dm-card__overlay" });
-      const badgeRow = el("div", { className: "dm-card__badges" });
-      badgeRow.appendChild(this.buildBadgesFromPost(post, 3));
-      overlay.appendChild(badgeRow);
 
       const overlayMeta = el("div", { className: "dm-card__overlay-meta" });
       const overlayTitle = el("p", { className: "dm-card__overlay-title" });
@@ -542,8 +606,7 @@
         href: post.link,
         className: "dm-card__title-link",
       });
-      titleLink.textContent =
-        post.cleanTitle || post.rawTitle.split(/[\[(|]/)[0].trim();
+      titleLink.textContent = displayTitle(post);
       title.appendChild(titleLink);
       info.appendChild(title);
 
@@ -589,9 +652,10 @@
       return section;
     },
 
-    buildNavbar(navLinks, siteLogo, pageType = "") {
+    buildNavbar(navLinks, pageType = "") {
       const nav = el("nav", { className: "dm-navbar", id: "dm-navbar" });
       const left = el("div", { className: "dm-navbar__left" });
+
       const logoLink = el("a", {
         href: window.location.origin + "/",
         className: "dm-logo",
@@ -611,41 +675,93 @@
         {
           name: "South Cinema",
           items: [
-            { text: "South Movies(Hindi)", slug: "south-movies-hindi", regex: /south.*hindi/i }
-          ]
+            {
+              text: "South Movies - Hindi",
+              slug: "south-movies-hindi",
+              regex: /south.*hindi/i,
+            },
+          ],
         },
         {
           name: "Bollywood & Regional",
           items: [
-            { text: "Bollywood Movies", slug: "bollywood-movies", regex: /bollywood/i },
-            { text: "Punjabi Movies", slug: "punjabi-movies", regex: /punjabi/i },
-            { text: "Gujarati Movies", slug: "gujarati-movies", regex: /gujarati/i },
-            { text: "Bhojpuri Movies", slug: "bhojpuri-movies", regex: /bhojpuri/i }
-          ]
+            {
+              text: "Bollywood Movies",
+              slug: "bollywood-movies",
+              regex: /bollywood/i,
+            },
+            {
+              text: "Punjabi Movies",
+              slug: "punjabi-movies",
+              regex: /punjabi/i,
+            },
+            {
+              text: "Gujarati Movies",
+              slug: "gujarati-movies",
+              regex: /gujarati/i,
+            },
+            {
+              text: "Bhojpuri Movies",
+              slug: "bhojpuri-movies",
+              regex: /bhojpuri/i,
+            },
+          ],
         },
         {
           name: "Hollywood & Foreign",
           items: [
-            { text: "Hollywood Movies (Hindi)", slug: "hollywood-movies-hindi", regex: /hollywood.*hindi/i },
-            { text: "Hollywood Movies (English)", slug: "hollywood-movies-english", regex: /hollywood.*(english|eng)/i },
-            { text: "Korean Movie (Hindi)", slug: "korean-movies-hindi", regex: /korean.*movie/i }
-          ]
+            {
+              text: "Hollywood Movies - Hindi",
+              slug: "hollywood-movies-hindi",
+              regex: /hollywood.*hindi/i,
+            },
+            {
+              text: "Hollywood Movies - English",
+              slug: "hollywood-movies-english",
+              regex: /hollywood.*(english|eng)/i,
+            },
+            {
+              text: "Korean Movie - Hindi",
+              slug: "korean-movies-hindi",
+              regex: /korean.*movie/i,
+            },
+          ],
         },
         {
           name: "TV & Web Series",
           items: [
-            { text: "Web series", slug: "web-series", regex: /web.*series/i },
-            { text: "Tv Show", slug: "tv-shows", regex: /tv.*show/i },
-            { text: "Korean Show in Hindi", slug: "korean-shows-hindi", regex: /korean.*show/i },
-            { text: "English TV show (Hindi)", slug: "english-tv-shows-hindi", regex: /english.*(tv|show).*hindi/i }
-          ]
+            {
+              text: "Web Series",
+              slug: "web-series",
+              regex: /^\s*web\s*series/i,
+            },
+            {
+              text: "TV Show",
+              slug: "tv-shows",
+              regex: /^\s*tv\s*shows?/i,
+            },
+            {
+              text: "Korean Show - Hindi",
+              slug: "korean-shows-hindi",
+              regex: /korean.*show/i,
+            },
+            {
+              text: "English TV Show - Hindi",
+              slug: "english-tv-shows-hindi",
+              regex: /english.*(tv|show).*hindi/i,
+            },
+          ],
         },
         {
           name: "Classics",
           items: [
-            { text: "Old is Gold Movies", slug: "old-is-gold-movies", regex: /old.*gold/i }
-          ]
-        }
+            {
+              text: "Old is Gold Movies",
+              slug: "old-is-gold-movies",
+              regex: /old.*gold/i,
+            },
+          ],
+        },
       ];
 
       const usedLinks = new Set();
@@ -654,21 +770,34 @@
           const match = navLinks.find((link) => item.regex.test(link.text));
           if (match) {
             item.href = match.href;
-            usedLinks.add(match.href);
           } else {
             item.href = window.location.origin + "/category/" + item.slug + "/";
           }
         });
       });
 
-      const leftoverLinks = navLinks.filter((link) => !usedLinks.has(link.href));
+      // Mark all links matching any group regex as "used" so they do not duplicate in "More"
+      navLinks.forEach((link) => {
+        for (const group of groups) {
+          for (const item of group.items) {
+            if (item.regex.test(link.text)) {
+              usedLinks.add(link.href);
+              return;
+            }
+          }
+        }
+      });
+
+      const leftoverLinks = navLinks.filter(
+        (link) => !usedLinks.has(link.href),
+      );
       if (leftoverLinks.length > 0) {
         groups.push({
           name: "More",
           items: leftoverLinks.map((link) => ({
             text: link.text,
-            href: link.href
-          }))
+            href: link.href,
+          })),
         });
       }
 
@@ -719,12 +848,15 @@
         });
       });
 
-      document.addEventListener("click", () => {
-        const allDropdowns = document.querySelectorAll(".dm-dropdown");
-        allDropdowns.forEach((d) => {
-          d.classList.remove("dm-dropdown--open");
+      // Close dropdowns on outside click (registered once via capture)
+      if (!document.__dmDropdownListener) {
+        document.__dmDropdownListener = true;
+        document.addEventListener("click", () => {
+          document.querySelectorAll(".dm-dropdown").forEach((d) => {
+            d.classList.remove("dm-dropdown--open");
+          });
         });
-      });
+      }
 
       center.appendChild(navList);
 
@@ -752,11 +884,13 @@
         title: "Search",
       });
       searchSubmit.appendChild(svgIcon("search"));
+      // Trim whitespace from search input on submit
+      searchForm.addEventListener("submit", () => {
+        searchInput.value = searchInput.value.trim();
+      });
       searchForm.appendChild(searchInput);
       searchForm.appendChild(searchSubmit);
       right.appendChild(searchForm);
-
-
 
       nav.appendChild(left);
       nav.appendChild(center);
@@ -862,9 +996,9 @@
       return empty;
     },
 
-    buildShell({ posts, navLinks, pagination, siteLogo, pageType, pageTitle }) {
+    buildShell({ posts, navLinks, pagination, pageType, pageTitle }) {
       const app = el("div", { className: "dm-app", id: "dm-app" });
-      app.appendChild(this.buildNavbar(navLinks, siteLogo, pageType));
+      app.appendChild(this.buildNavbar(navLinks, pageType));
 
       const main = el("main", { className: "dm-main", id: "dm-main" });
       if (pageType === "category") {
@@ -923,16 +1057,8 @@
     // Regex constants hoisted to avoid recreation on every extractDownloadSections call
     DOWNLOAD_LINK_RE: /download|GD|Gdrive|Magnet|Torrent|Direct/i,
     QUALITY_RE: /\d{3,4}p|4K|HEVC|x265|x264|HC|Esub|Dual|Multi|MB|GB/i,
-    SECTION_HEADING_RE: /version|untouched|encoded|print|cam|part|ep\b|episode|season|pack|zip|single\s*link/i,
-
-    qualityColor(label) {
-      if (/4K|2160/i.test(label)) return "#a855f7";
-      if (/1080/i.test(label)) return "#3b82f6";
-      if (/720/i.test(label)) return "#22c55e";
-      if (/480/i.test(label)) return "#f59e0b";
-      if (/HEVC|x265/i.test(label)) return "#06b6d4";
-      return "#6b7280";
-    },
+    SECTION_HEADING_RE:
+      /version|untouched|encoded|print|cam|part|ep\b|episode|season|pack|zip|single\s*link/i,
 
     extractSinglePost() {
       const titleEl = document.querySelector(
@@ -1051,9 +1177,21 @@
     },
 
     extractDownloadSections(contentEl, out) {
-      const allChildren = [
-        ...contentEl.children
-      ].filter(node => ["P", "H1", "H2", "H3", "H4", "H5", "H6", "DIV", "HR", "TABLE", "CENTER"].includes(node.tagName.toUpperCase()));
+      const allChildren = [...contentEl.children].filter((node) =>
+        [
+          "P",
+          "H1",
+          "H2",
+          "H3",
+          "H4",
+          "H5",
+          "H6",
+          "DIV",
+          "HR",
+          "TABLE",
+          "CENTER",
+        ].includes(node.tagName.toUpperCase()),
+      );
       let currentSection = null;
       const { DOWNLOAD_LINK_RE, QUALITY_RE, SECTION_HEADING_RE } = this;
 
@@ -1063,7 +1201,9 @@
 
         const tagUpper = node.tagName.toUpperCase();
         if (
-          (tagUpper === "P" || /^H[1-6]$/.test(tagUpper) || tagUpper === "CENTER") &&
+          (tagUpper === "P" ||
+            /^H[1-6]$/.test(tagUpper) ||
+            tagUpper === "CENTER") &&
           SECTION_HEADING_RE.test(text) &&
           text.length < 100
         ) {
@@ -1073,7 +1213,9 @@
         }
 
         if (
-          (tagUpper === "P" || /^H[1-6]$/.test(tagUpper) || tagUpper === "CENTER") &&
+          (tagUpper === "P" ||
+            /^H[1-6]$/.test(tagUpper) ||
+            tagUpper === "CENTER") &&
           QUALITY_RE.test(text) &&
           text.length < 80
         ) {
@@ -1081,7 +1223,12 @@
             currentSection = { heading: "Downloads", items: [] };
             out.push(currentSection);
           }
-          const links = this.collectLinks(node, DOWNLOAD_LINK_RE, QUALITY_RE, SECTION_HEADING_RE);
+          const links = this.collectLinks(
+            node,
+            DOWNLOAD_LINK_RE,
+            QUALITY_RE,
+            SECTION_HEADING_RE,
+          );
           currentSection.items.push({ label: text, links });
           continue;
         }
@@ -1186,13 +1333,11 @@
         downloadSections,
         catLinks,
       } = data;
-      const displayTitle =
+      const detailTitle =
         parsed.cleanTitle || rawTitle.split(/[\[(|]/)[0].trim();
       const app = el("div", { className: "dm-app", id: "dm-app" });
 
-      app.appendChild(
-        DMRenderer.buildNavbar(navLinks, DMParser.extractSiteLogo(), "single"),
-      );
+      app.appendChild(DMRenderer.buildNavbar(navLinks, "single"));
 
       const main = el("main", {
         className: "dm-main dm-single-main",
@@ -1210,7 +1355,7 @@
       if (poster) {
         const posterImg = el("img", {
           src: poster,
-          alt: displayTitle,
+          alt: detailTitle,
           className: "dm-single__poster",
         });
         posterImg.onerror = function () {
@@ -1225,7 +1370,7 @@
 
       const metaCol = el("div", { className: "dm-single__meta-col" });
       metaCol.appendChild(
-        el("h1", { className: "dm-single__title", textContent: displayTitle }),
+        el("h1", { className: "dm-single__title", textContent: detailTitle }),
       );
 
       if (parsed.quality.length > 0 || parsed.codec.length > 0) {
@@ -1233,7 +1378,7 @@
         const allBadges = [
           ...parsed.quality.map((q) => ({
             label: q,
-            color: this.qualityColor(q),
+            color: getQualityColor(q),
           })),
           ...parsed.codec.map((c) => ({ label: c, color: "#06b6d4" })),
           ...(parsed.audio.some((a) => /dual/i.test(a))
@@ -1259,23 +1404,27 @@
       }
 
       // Build info grid — merge releaseInfo + any parsed fallback fields
-      const infoItems = releaseInfo.length > 0
-        ? (() => {
-            const full = [...releaseInfo];
-            if (parsed.year && !full.find((r) => r.key === "Year"))
-              full.unshift({ key: "Year", value: parsed.year });
-            if (parsed.type && !full.find((r) => r.key === "Format"))
-              full.push({ key: "Source", value: parsed.type });
-            if (parsed.season)
-              full.push({ key: "Season", value: parsed.season });
-            return full;
-          })()
-        : [
-            parsed.year && { key: "Year", value: parsed.year },
-            parsed.season && { key: "Season", value: parsed.season },
-            parsed.type && { key: "Source", value: parsed.type },
-            parsed.audio.length && { key: "Audio", value: parsed.audio.slice(0, 2).join(", ") },
-          ].filter(Boolean);
+      const infoItems =
+        releaseInfo.length > 0
+          ? (() => {
+              const full = [...releaseInfo];
+              if (parsed.year && !full.find((r) => r.key === "Year"))
+                full.unshift({ key: "Year", value: parsed.year });
+              if (parsed.type && !full.find((r) => r.key === "Format"))
+                full.push({ key: "Source", value: parsed.type });
+              if (parsed.season)
+                full.push({ key: "Season", value: parsed.season });
+              return full;
+            })()
+          : [
+              parsed.year && { key: "Year", value: parsed.year },
+              parsed.season && { key: "Season", value: parsed.season },
+              parsed.type && { key: "Source", value: parsed.type },
+              parsed.audio.length && {
+                key: "Audio",
+                value: parsed.audio.slice(0, 2).join(", "),
+              },
+            ].filter(Boolean);
 
       if (infoItems.length > 0) {
         metaCol.appendChild(this.buildInfoGrid(infoItems, imdbId));
@@ -1337,7 +1486,7 @@
             label.appendChild(
               el("span", {
                 className: "dm-badge",
-                style: `--badge-color:${this.qualityColor(item.label)}`,
+                style: `--badge-color:${getQualityColor(item.label)}`,
                 textContent: item.label,
               }),
             );
@@ -1381,14 +1530,14 @@
         const ssGrid = el("div", { className: "dm-single__ss-grid" });
         screenshots.slice(0, 12).forEach((src) => {
           const ssWrap = el("div", { className: "dm-single__ss-wrap" });
-          ssWrap.appendChild(
-            el("img", {
-              src,
-              className: "dm-single__ss-img",
-              loading: "lazy",
-              alt: "Screenshot",
-            }),
-          );
+          const img = el("img", {
+            src,
+            className: "dm-single__ss-img",
+            loading: "lazy",
+            alt: "Screenshot",
+          });
+          img.addEventListener("click", () => openLightbox(src));
+          ssWrap.appendChild(img);
           ssGrid.appendChild(ssWrap);
         });
         ssSection.appendChild(ssGrid);
@@ -1408,13 +1557,15 @@
         );
         const dd = el("dd", { className: "dm-single__info-val" });
         if (key === "IMDb" && imdbId) {
-          dd.appendChild(el("a", {
-            href: `https://www.imdb.com/title/${imdbId}/`,
-            target: "_blank",
-            rel: "noopener noreferrer",
-            className: "dm-single__imdb-link",
-            textContent: value,
-          }));
+          dd.appendChild(
+            el("a", {
+              href: `https://www.imdb.com/title/${imdbId}/`,
+              target: "_blank",
+              rel: "noopener noreferrer",
+              className: "dm-single__imdb-link",
+              textContent: value,
+            }),
+          );
         } else {
           dd.textContent = value;
         }
@@ -1434,59 +1585,86 @@
           const targetYear = queryYear ? parseInt(queryYear) : null;
           let imdbRating = null;
 
-          // Step 1: Use IMDb's JSONP suggestion endpoint to find the correct IMDb ID.
-          // Query format: sg.media-imdb.com/suggests/{first_letter}/{title}.json
-          const firstChar = queryTitle.trim().charAt(0).toLowerCase();
-          const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(queryTitle.trim().toLowerCase())}.json`;
-          const suggestRes = await bgFetch(suggestUrl);
+          const trimmedTitle = queryTitle.trim();
+          if (trimmedTitle) {
+            // Step 1: Use IMDb's JSONP suggestion endpoint to find the correct IMDb ID.
+            // Query format: sg.media-imdb.com/suggests/{first_letter}/{title}.json
+            const firstChar = trimmedTitle.charAt(0).toLowerCase();
+            const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(trimmedTitle.toLowerCase())}.json`;
+            const suggestRes = await bgFetch(suggestUrl);
 
-          // The response is JSONP: imdb$bandar({...})
-          const jsonpText = suggestRes.text;
-          const jsonpMatch = jsonpText.match(/^[^(]+\((.+)\)$/s);
-          let imdbId = null;
+            // The response is JSONP: imdb$bandar({...})
+            const jsonpText = suggestRes?.text;
+            if (jsonpText) {
+              const jsonpMatch = jsonpText.match(/^[^(]+\((.+)\)$/s);
+              let imdbId = null;
 
-          if (jsonpMatch) {
-            const suggestData = JSON.parse(jsonpMatch[1]);
-            if (suggestData && suggestData.d && suggestData.d.length > 0) {
-              const queryTitleLower = queryTitle.toLowerCase();
+              if (jsonpMatch) {
+                const suggestData = JSON.parse(jsonpMatch[1]);
+                if (suggestData && suggestData.d && suggestData.d.length > 0) {
+                  const queryTitleLower = trimmedTitle.toLowerCase();
 
-              // Find the best title match (exact name + year within ±1)
-              let best = suggestData.d.find(item =>
-                item.id && item.id.startsWith("tt") && item.l &&
-                item.l.toLowerCase() === queryTitleLower &&
-                (!targetYear || !item.y || Math.abs(item.y - targetYear) <= 1)
-              );
-              // Fallback: any exact title match
-              if (!best) best = suggestData.d.find(item =>
-                item.id && item.id.startsWith("tt") && item.l &&
-                item.l.toLowerCase() === queryTitleLower
-              );
-              // Fallback: first movie/series result
-              if (!best) best = suggestData.d.find(item =>
-                item.id && item.id.startsWith("tt") &&
-                (item.qid === "movie" || item.qid === "tvSeries" || item.qid === "tvMiniSeries")
-              );
+                  // Find the best title match (exact name + year within ±1)
+                  let best = suggestData.d.find(
+                    (item) =>
+                      item.id &&
+                      item.id.startsWith("tt") &&
+                      item.l &&
+                      item.l.toLowerCase() === queryTitleLower &&
+                      (!targetYear ||
+                        !item.y ||
+                        Math.abs(item.y - targetYear) <= 1),
+                  );
+                  // Fallback: any exact title match
+                  if (!best)
+                    best = suggestData.d.find(
+                      (item) =>
+                        item.id &&
+                        item.id.startsWith("tt") &&
+                        item.l &&
+                        item.l.toLowerCase() === queryTitleLower,
+                    );
+                  // Fallback: first movie/series result
+                  if (!best)
+                    best = suggestData.d.find(
+                      (item) =>
+                        item.id &&
+                        item.id.startsWith("tt") &&
+                        (item.qid === "movie" ||
+                          item.qid === "tvSeries" ||
+                          item.qid === "tvMiniSeries"),
+                    );
 
-              if (best) imdbId = best.id;
-            }
-          }
-          // Store imdbId on data so buildDetailPage can create the clickable link
-          data.imdbId = imdbId;
+                  if (best) imdbId = best.id;
+                }
+              }
+              // Store imdbId on data so buildDetailPage can create the clickable link
+              data.imdbId = imdbId;
 
-          // Step 2: Fetch the real IMDb rating from the official ratings JSON endpoint
-          if (imdbId) {
-            const ratingsUrl = `https://p.media-imdb.com/static-content/documents/v1/title/${imdbId}/ratings%3Fjsonp=imdb.rating.run:imdb.api.title.ratings/data.json`;
-            const ratingsRes = await bgFetch(ratingsUrl);
-            const ratingsMatch = ratingsRes.text.match(/imdb\.rating\.run\((.+)\)/);
-            if (ratingsMatch) {
-              const ratingData = JSON.parse(ratingsMatch[1]);
-              const rating = ratingData?.resource?.rating;
-              if (rating) imdbRating = `${parseFloat(rating).toFixed(1)}/10`;
+              // Step 2: Fetch the real IMDb rating from the official ratings JSON endpoint
+              if (imdbId) {
+                const ratingsUrl = `https://p.media-imdb.com/static-content/documents/v1/title/${imdbId}/ratings%3Fjsonp=imdb.rating.run:imdb.api.title.ratings/data.json`;
+                const ratingsRes = await bgFetch(ratingsUrl);
+                const ratingsText = ratingsRes?.text;
+                if (ratingsText) {
+                  const ratingsMatch = ratingsText.match(
+                    /imdb\.rating\.run\((.+)\)/,
+                  );
+                  if (ratingsMatch) {
+                    const ratingData = JSON.parse(ratingsMatch[1]);
+                    const rating = ratingData?.resource?.rating;
+                    if (rating)
+                      imdbRating = `${parseFloat(rating).toFixed(1)}/10`;
+                  }
+                }
+              }
             }
           }
 
           // Step 3: Update the releaseInfo grid with the fetched rating
-          const imdbIndex = data.releaseInfo.findIndex((info) => info.key === "IMDb");
+          const imdbIndex = data.releaseInfo.findIndex(
+            (info) => info.key === "IMDb",
+          );
           if (imdbRating) {
             if (imdbIndex !== -1) {
               data.releaseInfo[imdbIndex].value = imdbRating;
@@ -1500,7 +1678,9 @@
         } catch (err) {
           console.warn("[DM Reimagined] IMDb rating fetch failed:", err);
           // On error, remove any garbage IMDb entry from the page
-          const imdbIndex = data.releaseInfo.findIndex((info) => info.key === "IMDb");
+          const imdbIndex = data.releaseInfo.findIndex(
+            (info) => info.key === "IMDb",
+          );
           if (imdbIndex !== -1) data.releaseInfo.splice(imdbIndex, 1);
         }
       }
@@ -1509,8 +1689,6 @@
       const app = this.buildDetailPage(data, navLinks);
       document.body.appendChild(app);
     },
-
-
   };
 
   // ── 5. Main Orchestration ──
@@ -1537,23 +1715,15 @@
     const posts = DMParser.extractPosts();
     const navLinks = DMParser.extractNavLinks();
     const pagination = DMParser.extractPagination();
-    const siteLogo = DMParser.extractSiteLogo();
     const pageTitle =
       document
         .querySelector("h1, .archive-title, .category-title, .page-title")
         ?.textContent?.trim() || "";
 
-    const skeleton = DMRenderer.buildSkeletonGrid(12);
-    document.body.appendChild(skeleton);
-
-    await new Promise((r) => setTimeout(r, 80));
-    skeleton.remove();
-
     const app = DMRenderer.buildShell({
       posts,
       navLinks,
       pagination,
-      siteLogo,
       pageType,
       pageTitle,
     });
@@ -1571,6 +1741,7 @@
       const nextHref = btn.dataset.href;
       if (!nextHref) return;
 
+      btn.disabled = true;
       btn.classList.add("dm-load-more--loading");
       btn.querySelector(".dm-load-more__text").textContent = "Loading…";
 
@@ -1582,14 +1753,8 @@
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, "text/html");
 
-        const articleSelectors = [
-          "article.post",
-          "article.type-post",
-          'article[id^="post-"]',
-          ".mh-posts article",
-        ];
         let newArticles = [];
-        for (const sel of articleSelectors) {
+        for (const sel of ARTICLE_SELECTORS) {
           newArticles = [...doc.querySelectorAll(sel)];
           if (newArticles.length > 0) break;
         }
@@ -1597,7 +1762,10 @@
         const grid = document.querySelector(".dm-grid");
         if (!grid) return;
 
+        const fragment = document.createDocumentFragment();
         let addedCount = 0;
+        const loadTimestamp = Date.now();
+
         newArticles.forEach((article, i) => {
           const rawTitleText = DMParser.extractRawTitle(article);
           const link = DMParser.extractPostLink(article);
@@ -1608,33 +1776,29 @@
           const thumbnail = DMParser.extractThumbnail(article);
 
           const post = {
-            id: article.id || `dm-load-${i}`,
+            id: article.id || `dm-load-${loadTimestamp}-${i}`,
             rawTitle: rawTitleText,
             ...parsed,
             thumbnail,
             link,
             category: null,
-            date: "",
           };
 
           const card = DMRenderer.buildCard(post);
-          card.style.opacity = "0";
-          card.style.transform = "translateY(20px)";
-          grid.appendChild(card);
+          card.style.setProperty("--delay", `${i * 40}ms`);
+          card.classList.add("dm-card--animate");
+          fragment.appendChild(card);
           addedCount++;
-
-          setTimeout(() => {
-            card.style.transition = "opacity 0.4s ease, transform 0.4s ease";
-            card.style.opacity = "1";
-            card.style.transform = "translateY(0)";
-          }, i * 40);
         });
+
+        grid.appendChild(fragment);
 
         const nextPagination = DMParser.extractPaginationFromDoc(doc);
         if (nextPagination?.nextHref) {
           btn.dataset.href = nextPagination.nextHref;
           btn.querySelector(".dm-load-more__text").textContent = "Load More";
           btn.classList.remove("dm-load-more--loading");
+          btn.disabled = false;
         } else {
           btn.parentElement?.removeChild(btn);
         }
@@ -1646,6 +1810,7 @@
         console.warn("[DM Reimagined] Load more failed:", err);
         btn.querySelector(".dm-load-more__text").textContent = "Load More";
         btn.classList.remove("dm-load-more--loading");
+        btn.disabled = false;
       }
     });
   }
@@ -1653,7 +1818,7 @@
   function animateCardsIn() {
     const cards = document.querySelectorAll(".dm-card");
     cards.forEach((card, i) => {
-      card.style.animationDelay = `${Math.min(i * 30, 600)}ms`;
+      card.style.setProperty("--delay", `${Math.min(i * 30, 600)}ms`);
       card.classList.add("dm-card--animate");
     });
   }
