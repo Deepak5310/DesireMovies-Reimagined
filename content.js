@@ -1404,6 +1404,7 @@
           }),
         );
 
+        const groupsWrap = el("div", { className: "dm-single__dl-groups-wrap" });
         downloadSections.forEach((section) => {
           const group = el("div", { className: "dm-single__dl-group" });
           group.appendChild(
@@ -1457,8 +1458,9 @@
               group.appendChild(row);
             });
           }
-          dlSection.appendChild(group);
+          groupsWrap.appendChild(group);
         });
+        dlSection.appendChild(groupsWrap);
         main.appendChild(dlSection);
       }
 

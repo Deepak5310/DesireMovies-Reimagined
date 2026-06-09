@@ -644,14 +644,19 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--dm-r-pill);
 }
 
-/* Download groups */
+/* Download groups wrapper & grids */
+.dm-single__dl-groups-wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  gap: 20px;
+  max-width: 1120px;
+}
 .dm-single__dl-group {
-  margin-bottom: 12px;
   border: 1px solid var(--dm-border);
   border-radius: var(--dm-r-lg); overflow: hidden;
-  max-width: 550px; /* Cap the width of the links block */
+  max-width: 550px; /* Cap the width of individual group */
+  width: 100%;
 }
-.dm-single__dl-group:last-child { margin-bottom: 0; }
 
 .dm-single__dl-group-head {
   background: var(--dm-bg-base);
