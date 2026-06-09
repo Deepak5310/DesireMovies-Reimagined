@@ -196,129 +196,7 @@
     return val;
   }
 
-  function openLightbox(index, screenshots) {
-    if (!screenshots || screenshots.length === 0) return;
-    let currentIndex = index;
 
-    // Lock page scroll
-    document.body.classList.add("dm-lightbox-open");
-
-    const lightbox = el("div", { className: "dm-lightbox" });
-    const content = el("div", { className: "dm-lightbox__content" });
-    const img = el("img", {
-      src: screenshots[currentIndex],
-      className: "dm-lightbox__img",
-      alt: "Screenshot",
-    });
-    const closeBtn = el("button", {
-      className: "dm-lightbox__close",
-      title: "Close",
-    });
-    closeBtn.innerHTML = `<svg class="dm-icon-close" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>`;
-
-    content.appendChild(img);
-    content.appendChild(closeBtn);
-
-    let prevBtn = null;
-    let nextBtn = null;
-    let counter = null;
-
-    const updateCounter = () => {
-      if (counter) {
-        counter.textContent = `${currentIndex + 1} / ${screenshots.length}`;
-      }
-    };
-
-    if (screenshots.length > 1) {
-      prevBtn = el("button", {
-        className: "dm-lightbox__prev",
-        title: "Previous",
-      });
-      prevBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
-
-      nextBtn = el("button", {
-        className: "dm-lightbox__next",
-        title: "Next",
-      });
-      nextBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`;
-
-      counter = el("div", { className: "dm-lightbox__counter" });
-
-      content.appendChild(prevBtn);
-      content.appendChild(nextBtn);
-      content.appendChild(counter);
-      updateCounter();
-    }
-
-    lightbox.appendChild(content);
-
-    const showImage = (idx) => {
-      if (idx < 0) idx = screenshots.length - 1;
-      if (idx >= screenshots.length) idx = 0;
-      currentIndex = idx;
-
-      img.classList.add("dm-lightbox__img--fade");
-      setTimeout(() => {
-        img.src = screenshots[currentIndex];
-        updateCounter();
-        img.onload = () => {
-          img.classList.remove("dm-lightbox__img--fade");
-        };
-      }, 100);
-    };
-
-    const closeLightbox = () => {
-      lightbox.classList.add("dm-lightbox--closing");
-      document.body.classList.remove("dm-lightbox-open");
-      setTimeout(() => lightbox.remove(), 200);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") {
-        closeLightbox();
-      } else if (e.key === "ArrowLeft" || e.key === "Left") {
-        if (screenshots.length > 1) showImage(currentIndex - 1);
-      } else if (e.key === "ArrowRight" || e.key === "Right") {
-        if (screenshots.length > 1) showImage(currentIndex + 1);
-      }
-    };
-
-    lightbox.addEventListener("click", (e) => {
-      if (e.target === lightbox || e.target === content) {
-        closeLightbox();
-      }
-    });
-
-    if (prevBtn) {
-      prevBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        showImage(currentIndex - 1);
-      });
-    }
-
-    if (nextBtn) {
-      nextBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        showImage(currentIndex + 1);
-      });
-    }
-
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      closeLightbox();
-    });
-
-    document.addEventListener("keydown", handleKeyDown);
-    const container = document.getElementById("dm-app") || document.body;
-    container.appendChild(lightbox);
-  }
 
   // ── 2. DOM Extraction & Title Parser ──
   const DMParser = {
@@ -1611,19 +1489,13 @@
         );
         const ssGrid = el("div", { className: "dm-single__ss-grid" });
         const slicedScreenshots = screenshots.slice(0, 12);
-        slicedScreenshots.forEach((src, index) => {
+        slicedScreenshots.forEach((src) => {
           const ssWrap = el("div", { className: "dm-single__ss-wrap" });
           const img = el("img", {
             src,
             className: "dm-single__ss-img",
             loading: "lazy",
             alt: "Screenshot",
-          });
-          img.addEventListener("click", (e) => {
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            e.preventDefault();
-            openLightbox(index, slicedScreenshots);
           });
           ssWrap.appendChild(img);
           ssGrid.appendChild(ssWrap);

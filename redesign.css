@@ -8,7 +8,7 @@
 
 /* ── Flash prevention ──────────────────────────────────────── */
 html.dm-extension-active body { background: #09090b !important; }
-html.dm-extension-active > body > *:not(#dm-app):not(.dm-lightbox):not(.dm-grid-section):not(style):not(script):not(link):not(meta):not(noscript) {
+html.dm-extension-active > body > *:not(#dm-app):not(.dm-grid-section):not(style):not(script):not(link):not(meta):not(noscript) {
   display: none !important;
 }
 
@@ -752,121 +752,7 @@ html.dm-extension-active body #dm-app .dm-single-main,
 }
 .dm-single__ss-img:hover { transform: scale(1.04); }
 
-/* ═══════════════════════════════════════════════════════════
-   LIGHTBOX
-══════════════════════════════════════════════════════════════ */
-.dm-lightbox {
-  position: fixed; inset: 0; z-index: 2000;
-  background: rgba(9, 9, 11, 0.88);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0;
-  animation: dmFadeIn 0.2s ease forwards;
-}
-.dm-lightbox--closing {
-  animation: dmFadeOut 0.2s ease forwards;
-}
-.dm-lightbox__content {
-  position: relative; max-width: 90vw; max-height: 90vh;
-  display: flex; align-items: center; justify-content: center;
-}
-.dm-lightbox__img {
-  max-width: 100%; max-height: 90vh; object-fit: contain;
-  border-radius: var(--dm-r-md);
-  border: 1px solid var(--dm-border);
-  box-shadow: var(--dm-shadow-md);
-  transform: scale(0.95);
-  animation: dmZoomIn 0.2s var(--dm-ease) forwards;
-  transition: opacity 120ms ease-in-out;
-}
-.dm-lightbox--closing .dm-lightbox__img {
-  animation: dmZoomOut 0.2s var(--dm-ease) forwards;
-}
-.dm-lightbox__close {
-  position: absolute; top: -42px; right: 0;
-  background: var(--dm-bg-card); color: var(--dm-text);
-  border: 1px solid var(--dm-border); border-radius: 50%;
-  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background var(--dm-fast), color var(--dm-fast);
-}
-.dm-lightbox__close:hover {
-  background: var(--dm-bg-hover); color: var(--dm-accent);
-}
 
-/* Navigation Buttons & Counter */
-.dm-lightbox__prev,
-.dm-lightbox__next {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(24, 24, 27, 0.85);
-  color: var(--dm-text);
-  border: 1px solid var(--dm-border);
-  border-radius: 50%;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background var(--dm-fast), color var(--dm-fast), transform var(--dm-fast), border-color var(--dm-fast);
-  z-index: 2010;
-  box-shadow: var(--dm-shadow-md);
-  padding: 0;
-}
-.dm-lightbox__prev { left: -64px; }
-.dm-lightbox__next { right: -64px; }
-.dm-lightbox__prev:hover,
-.dm-lightbox__next:hover {
-  background: var(--dm-bg-hover);
-  color: var(--dm-accent);
-  border-color: var(--dm-accent);
-}
-.dm-lightbox__prev:active,
-.dm-lightbox__next:active {
-  transform: translateY(-50%) scale(0.92);
-}
-
-.dm-lightbox__counter {
-  position: absolute;
-  bottom: -40px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(24, 24, 27, 0.85);
-  color: var(--dm-text-sub);
-  border: 1px solid var(--dm-border);
-  padding: 4px 12px;
-  border-radius: var(--dm-r-pill);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.8px;
-}
-
-.dm-lightbox__img--fade {
-  opacity: 0;
-}
-
-@media (max-width: 768px) {
-  .dm-lightbox__prev { left: 10px; }
-  .dm-lightbox__next { right: 10px; }
-  .dm-lightbox__prev,
-  .dm-lightbox__next {
-    width: 40px;
-    height: 40px;
-    background: rgba(24, 24, 27, 0.95);
-  }
-}
-
-@keyframes dmFadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes dmFadeOut { from { opacity: 1; } to { opacity: 0; } }
-@keyframes dmZoomIn { from { transform: scale(0.95); } to { transform: scale(1); } }
-@keyframes dmZoomOut { from { transform: scale(1); } to { transform: scale(0.95); } }
-
-/* Lightbox Scroll Lock */
-body.dm-lightbox-open {
-  overflow: hidden !important;
-}
 
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE
