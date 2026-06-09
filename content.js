@@ -155,13 +155,19 @@
     /Malayalam/i,
     /English/i,
     /Korean/i,
+    /Marathi/i,
+    /Bengali/i,
+    /Punjabi/i,
+    /Kannada/i,
+    /Bhojpuri/i,
+    /Gujarati/i,
     /DD\s*[\d.]+/i,
     /DDP\s*[\d.]+/i,
     /DD5\.1/i,
     /Atmos/i,
   ];
   const AUDIO_CLEAN_RE =
-    /\b(ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG)\b/gi;
+    /\b(ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|Marathi|Bengali|Punjabi|Kannada|Bhojpuri|Gujarati|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG)\b/gi;
 
   // Shared helper: compute display title from a post object
   function displayTitle(post) {
@@ -1556,6 +1562,30 @@
 
         const trimmedTitle = queryTitle.trim();
         if (trimmedTitle) {
+          const cacheKey = `imdb_${trimmedTitle.toLowerCase()}`;
+          const cached = await new Promise((resolve) => {
+            chrome.storage.local.get([cacheKey], (result) => {
+              resolve(result[cacheKey]);
+            });
+          });
+
+          if (cached && cached.rating && cached.id) {
+            const imdbValEl = document.querySelector(".dm-single__info-val--imdb");
+            if (imdbValEl) {
+              imdbValEl.innerHTML = "";
+              imdbValEl.appendChild(
+                el("a", {
+                  href: `https://www.imdb.com/title/${cached.id}/`,
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  className: "dm-single__imdb-link",
+                  textContent: cached.rating,
+                }),
+              );
+            }
+            return;
+          }
+
           const firstChar = trimmedTitle.charAt(0).toLowerCase();
           const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(trimmedTitle.toLowerCase())}.json`;
           const suggestRes = await bgFetch(suggestUrl);
@@ -1617,6 +1647,12 @@
               }
             }
           }
+
+          if (imdbId && imdbRating) {
+            chrome.storage.local.set({
+              [cacheKey]: { rating: imdbRating, id: imdbId }
+            });
+          }
         }
 
         const imdbValEl = document.querySelector(".dm-single__info-val--imdb");
@@ -1632,7 +1668,7 @@
                 textContent: imdbRating,
               }),
             );
-          } else if (imdbId && imdbValEl.textContent.trim() && imdbValEl.textContent.trim() !== "N/A") {
+          } else if (imdbId && imdbValEl.textContent.trim() && imdbValEl.textContent.trim() !== "N/A" && imdbValEl.textContent.trim() !== "__LOADING__") {
             const currentRating = imdbValEl.textContent.trim();
             imdbValEl.innerHTML = "";
             imdbValEl.appendChild(
@@ -1644,7 +1680,7 @@
                 textContent: currentRating,
               }),
             );
-          } else if (!imdbRating && (!imdbValEl.textContent.trim() || imdbValEl.textContent.trim() === "N/A")) {
+          } else if (!imdbRating && (!imdbValEl.textContent.trim() || imdbValEl.textContent.trim() === "N/A" || imdbValEl.textContent.trim() === "__LOADING__")) {
             const dt = imdbValEl.previousElementSibling;
             if (dt && dt.classList.contains("dm-single__info-key")) {
               dt.style.display = "none";

@@ -21,6 +21,9 @@
   "background": {
     "service_worker": "background.js"
   },
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://1desiremovies.top/*",
     "https://sg.media-imdb.com/*",
