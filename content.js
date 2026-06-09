@@ -1241,8 +1241,13 @@
       const date =
         dateEl?.getAttribute("datetime") || dateEl?.textContent?.trim() || "";
 
-      if (!releaseInfo.some((info) => info.key === "IMDb")) {
-        releaseInfo.push({ key: "IMDb", value: "" });
+      let parsedImdbRating = "";
+      const imdbIndex = releaseInfo.findIndex((info) => info.key === "IMDb");
+      if (imdbIndex !== -1) {
+        parsedImdbRating = releaseInfo[imdbIndex].value;
+        releaseInfo[imdbIndex].value = "__LOADING__";
+      } else {
+        releaseInfo.push({ key: "IMDb", value: "__LOADING__" });
       }
 
       return {
@@ -1254,6 +1259,7 @@
         downloadSections,
         catLinks,
         date,
+        parsedImdbRating,
       };
     },
 
@@ -1640,7 +1646,14 @@
         const dd = el("dd", { className: "dm-single__info-val" });
         if (key === "IMDb") {
           dd.classList.add("dm-single__info-val--imdb");
-          if (value && imdbId) {
+          if (value === "__LOADING__") {
+            dd.appendChild(
+              el("span", {
+                className: "dm-skeleton",
+                style: "display: inline-block; width: 45px; height: 14px; vertical-align: middle; margin: 0; opacity: 0.6;"
+              })
+            );
+          } else if (value && imdbId) {
             dd.appendChild(
               el("a", {
                 href: `https://www.imdb.com/title/${imdbId}/`,
