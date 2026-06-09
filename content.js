@@ -561,7 +561,9 @@
       articles = articles.filter((a) => this.extractRawTitle(a).length > 2);
 
       return articles
-        .map((article, index) => this.extractPostFromArticle(article, `dm-post-${index}`))
+        .map((article, index) =>
+          this.extractPostFromArticle(article, `dm-post-${index}`),
+        )
         .filter(Boolean);
     },
 
@@ -899,7 +901,9 @@
             activeDropdown.classList.remove("dm-dropdown--open");
           }
           dropdownLi.classList.toggle("dm-dropdown--open");
-          activeDropdown = dropdownLi.classList.contains("dm-dropdown--open") ? dropdownLi : null;
+          activeDropdown = dropdownLi.classList.contains("dm-dropdown--open")
+            ? dropdownLi
+            : null;
         });
       });
 
@@ -1104,29 +1108,31 @@
     buildFooter() {
       const footer = el("footer", { className: "dm-footer" });
       const inner = el("div", { className: "dm-footer__inner" });
-      
+
       const leftCol = el("div", { className: "dm-footer__left" });
       const logo = el("div", { className: "dm-footer__brand" });
-      logo.innerHTML = `<span class="dm-logo__desire">Desire</span><span class="dm-logo__movies">Movies</span><span class="dm-footer__tag">Reimagined</span>`;
-      const desc = el("p", { 
-        className: "dm-footer__desc", 
-        textContent: "A premium dark mode interface designed to elevate your browsing experience. Sleek layouts, ad suppression, and IMDb integration — reimagined." 
+      logo.innerHTML = `<span class="dm-logo__desire">Desire</span><span class="dm-logo__movies">Movies</span>`;
+      const desc = el("p", {
+        className: "dm-footer__desc",
+        textContent:
+          "A premium dark mode interface designed to elevate your browsing experience. Sleek layouts, ad suppression, and IMDb integration.",
       });
       leftCol.appendChild(logo);
       leftCol.appendChild(desc);
-      
+
       const rightCol = el("div", { className: "dm-footer__right" });
-      const copyText = el("p", { 
-        className: "dm-footer__copy", 
-        innerHTML: "&copy; 2026 DesireMovies Reimagined. Built with focus on UI/UX excellence." 
+      const copyText = el("p", {
+        className: "dm-footer__copy",
+        innerHTML:
+          "&copy; 2026 DesireMovies. Built with focus on UI/UX excellence.",
       });
-      
+
       const devInfo = el("div", { className: "dm-footer__dev" });
       devInfo.innerHTML = `Developed by <a href="https://github.com/Deepak5310" target="_blank" rel="noopener noreferrer" class="dm-footer__dev-link"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px; display: inline-block;"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/></svg>Deepak5310</a>`;
-      
+
       rightCol.appendChild(copyText);
       rightCol.appendChild(devInfo);
-      
+
       inner.appendChild(leftCol);
       inner.appendChild(rightCol);
       footer.appendChild(inner);
@@ -1199,7 +1205,10 @@
           { key: "Genres", re: /(?:All\s+)?Genres?[:\t \u00a0]+([^\n\r]+)/i },
           { key: "Audio", re: /Audio[:\t \u00a0]+([^\n\r]+)/i },
           { key: "Format", re: /Format[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Plot", re: /(?:Plot|Story[ \t-]*line|Story|Synopsis)[:\t \u00a0]+([^\n\r]+)/i },
+          {
+            key: "Plot",
+            re: /(?:Plot|Story[ \t-]*line|Story|Synopsis)[:\t \u00a0]+([^\n\r]+)/i,
+          },
         ];
         for (const { key, re } of patterns) {
           const m = allText.match(re);
@@ -1417,7 +1426,10 @@
         downloadSections,
         catLinks,
       } = data;
-      const detailTitle = displayTitle({ cleanTitle: parsed.cleanTitle, rawTitle });
+      const detailTitle = displayTitle({
+        cleanTitle: parsed.cleanTitle,
+        rawTitle,
+      });
       const app = el("div", { className: "dm-app", id: "dm-app" });
 
       app.appendChild(DMRenderer.buildNavbar(navLinks, "single"));
@@ -1452,7 +1464,7 @@
       hero.appendChild(posterWrap);
 
       const metaCol = el("div", { className: "dm-single__meta-col" });
-      
+
       // 1. Title Group
       const titleGroup = el("div", { className: "dm-single__title-group" });
       titleGroup.appendChild(
@@ -1479,7 +1491,10 @@
       const plotItem = releaseInfo.find((r) => r.key === "Plot");
       if (plotItem && plotItem.value) {
         metaCol.appendChild(
-          el("p", { className: "dm-single__plot", textContent: plotItem.value })
+          el("p", {
+            className: "dm-single__plot",
+            textContent: plotItem.value,
+          }),
         );
       }
 
@@ -1487,7 +1502,14 @@
       const infoItems =
         releaseInfo.length > 0
           ? (() => {
-              const full = releaseInfo.filter((r) => r.key !== "Quality" && r.key !== "Source" && r.key !== "Format" && r.key !== "Plot" && r.key !== "Title");
+              const full = releaseInfo.filter(
+                (r) =>
+                  r.key !== "Quality" &&
+                  r.key !== "Source" &&
+                  r.key !== "Format" &&
+                  r.key !== "Plot" &&
+                  r.key !== "Title",
+              );
               if (parsed.year && !full.find((r) => r.key === "Year"))
                 full.unshift({ key: "Year", value: parsed.year });
               if (parsed.season)
@@ -1519,7 +1541,9 @@
           }),
         );
 
-        const groupsWrap = el("div", { className: "dm-single__dl-groups-wrap" });
+        const groupsWrap = el("div", {
+          className: "dm-single__dl-groups-wrap",
+        });
         downloadSections.forEach((section) => {
           const group = el("div", { className: "dm-single__dl-group" });
           group.appendChild(
@@ -1833,7 +1857,10 @@
         const loadTimestamp = Date.now();
 
         newArticles.forEach((article, i) => {
-          const post = DMParser.extractPostFromArticle(article, `dm-load-${loadTimestamp}-${i}`);
+          const post = DMParser.extractPostFromArticle(
+            article,
+            `dm-load-${loadTimestamp}-${i}`,
+          );
           if (!post) return;
 
           const card = DMRenderer.buildCard(post);
