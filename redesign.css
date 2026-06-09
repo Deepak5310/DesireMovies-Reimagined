@@ -263,11 +263,11 @@ a { color: inherit; text-decoration: none; }
    MAIN CONTENT
 ══════════════════════════════════════════════════════════════ */
 .dm-main {
-  max-width: var(--dm-max-w);
-  margin: 0 auto;
-  padding: calc(24px + var(--dm-navbar-h)) var(--dm-pad) 56px;
+  max-width: var(--dm-max-w) !important;
+  margin: 0 auto !important;
+  padding: calc(24px + var(--dm-navbar-h)) var(--dm-pad) 56px !important;
 }
-.dm-single-main { padding-top: calc(20px + var(--dm-navbar-h)); }
+.dm-single-main { padding-top: calc(20px + var(--dm-navbar-h)) !important; }
 
 /* Page header */
 .dm-page-header { margin-bottom: 24px; display: flex; align-items: baseline; gap: 10px; }
