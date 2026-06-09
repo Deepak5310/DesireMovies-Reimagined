@@ -24,7 +24,8 @@
   "host_permissions": [
     "https://1desiremovies.top/*",
     "https://sg.media-imdb.com/*",
-    "https://p.media-imdb.com/*"
+    "https://p.media-imdb.com/*",
+    "https://gyanigurus.xyz/*"
   ],
   "content_scripts": [
     {
@@ -49,6 +50,15 @@
       ],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://gyanigurus.xyz/*"
+      ],
+      "js": [
+        "gyanigurus.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
