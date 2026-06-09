@@ -495,10 +495,9 @@ html.dm-extension-active body #dm-app .dm-single-main,
 .dm-footer {
   background: linear-gradient(to top, rgba(9,9,11,1) 0%, rgba(17,17,19,0.95) 100%) !important;
   border-top: 1px solid var(--dm-border) !important;
-  padding: 20px var(--dm-pad) !important;
+  padding: 16px var(--dm-pad) !important;
   margin-top: auto !important;
   color: var(--dm-text-sub) !important;
-  text-align: center !important;
 }
 .dm-footer__inner {
   max-width: var(--dm-max-w) !important;
@@ -507,10 +506,11 @@ html.dm-extension-active body #dm-app .dm-single-main,
   flex-direction: column !important;
   align-items: center !important;
   gap: 6px !important;
+  text-align: center !important;
 }
 .dm-footer__copy {
   margin: 0 !important;
-  font-size: 12px !important;
+  font-size: 11.5px !important;
   color: var(--dm-text-sub) !important;
   font-weight: 500 !important;
 }
@@ -524,6 +524,7 @@ html.dm-extension-active body #dm-app .dm-single-main,
   transition: color var(--dm-fast) !important;
   display: inline-flex !important;
   align-items: center !important;
+  gap: 3px !important;
 }
 .dm-footer__dev-link:hover {
   color: var(--dm-accent) !important;
