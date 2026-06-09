@@ -18,12 +18,14 @@
       if (b && /instant\s*dl/i.test(b.textContent)) {
         done = true;
         a.click();
+        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 500);
         return true;
       }
       // Fallback: full anchor text
       if (/instant\s*dl/i.test(a.textContent)) {
         done = true;
         a.click();
+        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 500);
         return true;
       }
     }
