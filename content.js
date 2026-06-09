@@ -1065,6 +1065,7 @@
           { key: "Genres", re: /(?:All\s+)?Genres?[:\t \u00a0]+([^\n\r]+)/i },
           { key: "Audio", re: /Audio[:\t \u00a0]+([^\n\r]+)/i },
           { key: "Format", re: /Format[:\t \u00a0]+([^\n\r]+)/i },
+          { key: "Plot", re: /(?:Plot|Story[ \t-]*line|Story|Synopsis)[:\t \u00a0]+([^\n\r]+)/i },
         ];
         for (const { key, re } of patterns) {
           const m = allText.match(re);
@@ -1325,11 +1326,9 @@
       const infoItems =
         releaseInfo.length > 0
           ? (() => {
-              const full = [...releaseInfo];
+              const full = releaseInfo.filter((r) => r.key !== "Quality" && r.key !== "Source" && r.key !== "Format");
               if (parsed.year && !full.find((r) => r.key === "Year"))
                 full.unshift({ key: "Year", value: parsed.year });
-              if (parsed.type && !full.find((r) => r.key === "Format"))
-                full.push({ key: "Source", value: parsed.type });
               if (parsed.season)
                 full.push({ key: "Season", value: parsed.season });
               return full;
@@ -1337,7 +1336,6 @@
           : [
               parsed.year && { key: "Year", value: parsed.year },
               parsed.season && { key: "Season", value: parsed.season },
-              parsed.type && { key: "Source", value: parsed.type },
               parsed.audio.length && {
                 key: "Audio",
                 value: parsed.audio.slice(0, 2).join(", "),
