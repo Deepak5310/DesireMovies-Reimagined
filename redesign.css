@@ -738,6 +738,7 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--dm-shadow-md);
   transform: scale(0.95);
   animation: dmZoomIn 0.2s var(--dm-ease) forwards;
+  transition: opacity 120ms ease-in-out;
 }
 .dm-lightbox--closing .dm-lightbox__img {
   animation: dmZoomOut 0.2s var(--dm-ease) forwards;
@@ -751,6 +752,70 @@ a { color: inherit; text-decoration: none; }
 }
 .dm-lightbox__close:hover {
   background: var(--dm-bg-hover); color: var(--dm-accent);
+}
+
+/* Navigation Buttons & Counter */
+.dm-lightbox__prev,
+.dm-lightbox__next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(24, 24, 27, 0.85);
+  color: var(--dm-text);
+  border: 1px solid var(--dm-border);
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--dm-fast), color var(--dm-fast), transform var(--dm-fast), border-color var(--dm-fast);
+  z-index: 2010;
+  box-shadow: var(--dm-shadow-md);
+  padding: 0;
+}
+.dm-lightbox__prev { left: -64px; }
+.dm-lightbox__next { right: -64px; }
+.dm-lightbox__prev:hover,
+.dm-lightbox__next:hover {
+  background: var(--dm-bg-hover);
+  color: var(--dm-accent);
+  border-color: var(--dm-accent);
+}
+.dm-lightbox__prev:active,
+.dm-lightbox__next:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+.dm-lightbox__counter {
+  position: absolute;
+  bottom: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24, 24, 27, 0.85);
+  color: var(--dm-text-sub);
+  border: 1px solid var(--dm-border);
+  padding: 4px 12px;
+  border-radius: var(--dm-r-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+}
+
+.dm-lightbox__img--fade {
+  opacity: 0;
+}
+
+@media (max-width: 768px) {
+  .dm-lightbox__prev { left: 10px; }
+  .dm-lightbox__next { right: 10px; }
+  .dm-lightbox__prev,
+  .dm-lightbox__next {
+    width: 40px;
+    height: 40px;
+    background: rgba(24, 24, 27, 0.95);
+  }
 }
 
 @keyframes dmFadeIn { from { opacity: 0; } to { opacity: 1; } }
