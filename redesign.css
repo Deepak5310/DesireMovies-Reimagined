@@ -796,3 +796,7 @@ html.dm-extension-active body #dm-app .dm-single-main,
   .dm-grid { grid-template-columns: 1fr; }
 }
 
+@keyframes dmSpin {
+  100% { transform: rotate(360deg); }
+}
+
