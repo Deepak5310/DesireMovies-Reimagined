@@ -200,6 +200,9 @@
     if (!screenshots || screenshots.length === 0) return;
     let currentIndex = index;
 
+    // Lock page scroll
+    document.body.classList.add("dm-lightbox-open");
+
     const lightbox = el("div", { className: "dm-lightbox" });
     const content = el("div", { className: "dm-lightbox__content" });
     const img = el("img", {
@@ -266,6 +269,7 @@
 
     const closeLightbox = () => {
       lightbox.classList.add("dm-lightbox--closing");
+      document.body.classList.remove("dm-lightbox-open");
       setTimeout(() => lightbox.remove(), 200);
       document.removeEventListener("keydown", handleKeyDown);
     };
@@ -529,6 +533,25 @@
       return null;
     },
 
+    extractPostFromArticle(article, fallbackId) {
+      const rawTitle = this.extractRawTitle(article);
+      const link = this.extractPostLink(article);
+      if (!rawTitle || !link) return null;
+
+      const parsed = this.parseTitle(rawTitle);
+      const thumbnail = this.extractThumbnail(article);
+      const category = this.extractCategory(article);
+
+      return {
+        id: article.id || fallbackId,
+        rawTitle,
+        ...parsed,
+        thumbnail,
+        link,
+        category,
+      };
+    },
+
     extractPosts() {
       let articles = [];
       for (const sel of ARTICLE_SELECTORS) {
@@ -538,22 +561,8 @@
       articles = articles.filter((a) => this.extractRawTitle(a).length > 2);
 
       return articles
-        .map((article, index) => {
-          const rawTitle = this.extractRawTitle(article);
-          const parsed = this.parseTitle(rawTitle);
-          const thumbnail = this.extractThumbnail(article);
-          const link = this.extractPostLink(article);
-          const category = this.extractCategory(article);
-          return {
-            id: article.id || `dm-post-${index}`,
-            rawTitle,
-            ...parsed,
-            thumbnail,
-            link,
-            category,
-          };
-        })
-        .filter((p) => p.link);
+        .map((article, index) => this.extractPostFromArticle(article, `dm-post-${index}`))
+        .filter(Boolean);
     },
 
     _extractPaginationEl(scope) {
@@ -812,27 +821,25 @@
       ];
 
       const usedLinks = new Set();
-      groups.forEach((group) => {
-        group.items.forEach((item) => {
-          const match = navLinks.find((link) => item.regex.test(link.text));
-          if (match) {
-            item.href = match.href;
-          } else {
-            item.href = window.location.origin + "/category/" + item.slug + "/";
-          }
-        });
-      });
-
-      // Mark all links matching any group regex as "used" so they do not duplicate in "More"
+      // Single pass mapping navLinks to groups to match slugs and track used categories
       navLinks.forEach((link) => {
         for (const group of groups) {
           for (const item of group.items) {
             if (item.regex.test(link.text)) {
+              if (!item.href) item.href = link.href;
               usedLinks.add(link.href);
-              return;
             }
           }
         }
+      });
+
+      // Fallback for categories without matched links on current page
+      groups.forEach((group) => {
+        group.items.forEach((item) => {
+          if (!item.href) {
+            item.href = window.location.origin + "/category/" + item.slug + "/";
+          }
+        });
       });
 
       const leftoverLinks = navLinks.filter(
@@ -847,6 +854,9 @@
           })),
         });
       }
+
+      // Track the currently active open dropdown menu
+      let activeDropdown = null;
 
       // Render Dropdowns
       groups.forEach((group) => {
@@ -885,13 +895,11 @@
 
         dropdownBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const allDropdowns = document.querySelectorAll(".dm-dropdown");
-          allDropdowns.forEach((d) => {
-            if (d !== dropdownLi) {
-              d.classList.remove("dm-dropdown--open");
-            }
-          });
+          if (activeDropdown && activeDropdown !== dropdownLi) {
+            activeDropdown.classList.remove("dm-dropdown--open");
+          }
           dropdownLi.classList.toggle("dm-dropdown--open");
+          activeDropdown = dropdownLi.classList.contains("dm-dropdown--open") ? dropdownLi : null;
         });
       });
 
@@ -899,9 +907,10 @@
       if (!document.__dmDropdownListener) {
         document.__dmDropdownListener = true;
         document.addEventListener("click", () => {
-          document.querySelectorAll(".dm-dropdown").forEach((d) => {
-            d.classList.remove("dm-dropdown--open");
-          });
+          if (activeDropdown) {
+            activeDropdown.classList.remove("dm-dropdown--open");
+            activeDropdown = null;
+          }
         });
       }
 
@@ -1382,8 +1391,7 @@
         downloadSections,
         catLinks,
       } = data;
-      const detailTitle =
-        parsed.cleanTitle || rawTitle.split(/[\[(|]/)[0].trim();
+      const detailTitle = displayTitle({ cleanTitle: parsed.cleanTitle, rawTitle });
       const app = el("div", { className: "dm-app", id: "dm-app" });
 
       app.appendChild(DMRenderer.buildNavbar(navLinks, "single"));
@@ -1799,22 +1807,8 @@
         const loadTimestamp = Date.now();
 
         newArticles.forEach((article, i) => {
-          const rawTitleText = DMParser.extractRawTitle(article);
-          const link = DMParser.extractPostLink(article);
-
-          if (!link || !rawTitleText) return;
-
-          const parsed = DMParser.parseTitle(rawTitleText);
-          const thumbnail = DMParser.extractThumbnail(article);
-
-          const post = {
-            id: article.id || `dm-load-${loadTimestamp}-${i}`,
-            rawTitle: rawTitleText,
-            ...parsed,
-            thumbnail,
-            link,
-            category: null,
-          };
+          const post = DMParser.extractPostFromArticle(article, `dm-load-${loadTimestamp}-${i}`);
+          if (!post) return;
 
           const card = DMRenderer.buildCard(post);
           card.style.setProperty("--delay", `${i * 40}ms`);
