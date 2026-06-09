@@ -1322,11 +1322,18 @@
         el("h1", { className: "dm-single__title", textContent: detailTitle }),
       );
 
+      const plotItem = releaseInfo.find((r) => r.key === "Plot");
+      if (plotItem && plotItem.value) {
+        metaCol.appendChild(
+          el("p", { className: "dm-single__plot", textContent: plotItem.value })
+        );
+      }
+
       // Build info grid — merge releaseInfo + any parsed fallback fields
       const infoItems =
         releaseInfo.length > 0
           ? (() => {
-              const full = releaseInfo.filter((r) => r.key !== "Quality" && r.key !== "Source" && r.key !== "Format");
+              const full = releaseInfo.filter((r) => r.key !== "Quality" && r.key !== "Source" && r.key !== "Format" && r.key !== "Plot");
               if (parsed.year && !full.find((r) => r.key === "Year"))
                 full.unshift({ key: "Year", value: parsed.year });
               if (parsed.season)

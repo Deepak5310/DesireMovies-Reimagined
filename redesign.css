@@ -525,19 +525,28 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--dm-border);
 }
 .dm-single__poster-wrap {
-  flex-shrink: 0; width: 175px; aspect-ratio: 2/3;
+  flex-shrink: 0; width: 230px;
   border-radius: var(--dm-r-lg); overflow: hidden;
   background: var(--dm-bg-hover);
   box-shadow: var(--dm-shadow-md);
+  height: fit-content;
 }
-.dm-single__poster { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dm-single__poster { width: 100%; height: auto; display: block; }
 .dm-single__poster-wrap--error {
   display: flex; align-items: center;
   justify-content: center; color: var(--dm-text-muted);
+  aspect-ratio: 2/3;
 }
 
 .dm-single__meta-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .dm-single__title { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2; color: var(--dm-text); }
+.dm-single__plot {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--dm-text-sub);
+  margin: 0;
+  max-width: 800px;
+}
 
 /* Info grid — rows with subtle dividers */
 .dm-single__info-grid {
