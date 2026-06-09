@@ -1548,7 +1548,7 @@
             );
           } else {
             section.items
-              .filter((item) => !(item.links.length === 0 && /download/i.test(item.label)))
+              .filter((item) => item.links.length > 0)
               .forEach((item) => {
               const row = el("div", { className: "dm-single__dl-row" });
               const label = el("div", { className: "dm-single__dl-label" });
