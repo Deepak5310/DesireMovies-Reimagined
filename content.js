@@ -1372,7 +1372,7 @@
       const infoItems =
         releaseInfo.length > 0
           ? (() => {
-              const full = releaseInfo.filter((r) => r.key !== "Quality" && r.key !== "Source" && r.key !== "Format" && r.key !== "Plot");
+              const full = releaseInfo.filter((r) => r.key !== "Quality" && r.key !== "Source" && r.key !== "Format" && r.key !== "Plot" && r.key !== "Title");
               if (parsed.year && !full.find((r) => r.key === "Year"))
                 full.unshift({ key: "Year", value: parsed.year });
               if (parsed.season)
