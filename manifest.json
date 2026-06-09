@@ -25,7 +25,8 @@
     "https://1desiremovies.top/*",
     "https://sg.media-imdb.com/*",
     "https://p.media-imdb.com/*",
-    "https://gyanigurus.xyz/*"
+    "https://gyanigurus.xyz/*",
+    "https://gdflix.dev/*"
   ],
   "content_scripts": [
     {
@@ -57,6 +58,15 @@
       ],
       "js": [
         "gyanigurus.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://gdflix.dev/*"
+      ],
+      "js": [
+        "gdflix.js"
       ],
       "run_at": "document_idle"
     }
