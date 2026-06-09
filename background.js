@@ -7,16 +7,21 @@
 
 "use strict";
 
-chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
-  if (request.action !== "fetch") return;
-  (async () => {
-    try {
-      const response = await fetch(request.url, request.options);
-      const text = await response.text();
-      sendResponse({ success: true, data: { status: response.status, statusText: response.statusText, text } });
-    } catch (err) {
-      sendResponse({ success: false, error: err.message });
-    }
-  })();
-  return true; // Keep the message channel open for async response
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "fetch") {
+    (async () => {
+      try {
+        const response = await fetch(request.url, request.options);
+        const text = await response.text();
+        sendResponse({ success: true, data: { status: response.status, statusText: response.statusText, text } });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true; // Keep the message channel open for async response
+  }
+
+  if (request.action === "close_tab" && sender.tab?.id) {
+    chrome.tabs.remove(sender.tab.id);
+  }
 });

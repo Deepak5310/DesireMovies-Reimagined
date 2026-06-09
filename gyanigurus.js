@@ -21,11 +21,13 @@
   }
 
   function tryClickGdflix() {
-    if (done) return true; // already clicked, ignore
+    if (done) return true;
     const a = document.querySelector('a[href*="gdflix"]');
     if (a) {
       done = true;
       a.click();
+      // Close this gyanigurus tab after gdflix opens
+      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 500);
       return true;
     }
     return false;
