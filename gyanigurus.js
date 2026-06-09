@@ -5,6 +5,8 @@
 (function () {
   "use strict";
 
+  let done = false; // guard — ensure we only ever click gdflix once
+
   function tryClickOpenButton() {
     for (const btn of document.querySelectorAll("button")) {
       if (
@@ -19,19 +21,25 @@
   }
 
   function tryClickGdflix() {
+    if (done) return true; // already clicked, ignore
     const a = document.querySelector('a[href*="gdflix"]');
-    if (a) { a.click(); return true; }
+    if (a) {
+      done = true;
+      a.click();
+      return true;
+    }
     return false;
   }
 
   function observe() {
-    let phase = "open_btn";
+    let openBtnClicked = false;
 
     const observer = new MutationObserver(() => {
-      if (phase === "open_btn" && tryClickOpenButton()) {
-        phase = "gdflix";
-      } else if (phase === "gdflix" && tryClickGdflix()) {
-        observer.disconnect();
+      if (done) { observer.disconnect(); return; }
+      if (!openBtnClicked) {
+        openBtnClicked = tryClickOpenButton();
+      } else {
+        if (tryClickGdflix()) observer.disconnect();
       }
     });
 
