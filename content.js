@@ -232,7 +232,8 @@
 
     closeBtn.addEventListener("click", closeLightbox);
     document.addEventListener("keydown", handleEsc);
-    document.body.appendChild(lightbox);
+    const container = document.getElementById("dm-app") || document.body;
+    container.appendChild(lightbox);
   }
 
   // ── 2. DOM Extraction & Title Parser ──

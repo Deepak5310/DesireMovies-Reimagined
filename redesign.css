@@ -8,7 +8,7 @@
 
 /* ── Flash prevention ──────────────────────────────────────── */
 html.dm-extension-active body { background: #09090b !important; }
-html.dm-extension-active > body > *:not(#dm-app):not(.dm-grid-section):not(style):not(script):not(link):not(meta):not(noscript) {
+html.dm-extension-active > body > *:not(#dm-app):not(.dm-lightbox):not(.dm-grid-section):not(style):not(script):not(link):not(meta):not(noscript) {
   display: none !important;
 }
 
