@@ -503,52 +503,6 @@
 
   // ── 3. List Page Renderer ──
   const DMRenderer = {
-    BADGE_CONFIG: {
-      "4K": { color: "#a855f7", label: "4K" },
-      "2160p": { color: "#a855f7", label: "4K" },
-      "1080p": { color: "#3b82f6", label: "1080p" },
-      "720p": { color: "#22c55e", label: "720p" },
-      "480p": { color: "#f59e0b", label: "480p" },
-      HEVC: { color: "#06b6d4", label: "HEVC" },
-      x265: { color: "#06b6d4", label: "x265" },
-      "Dual Audio": { color: "#f97316", label: "Dual" },
-      "Multi Audio": { color: "#f97316", label: "Multi" },
-      ESubs: { color: "#8b5cf6", label: "SUB" },
-    },
-
-    buildBadge(text, color) {
-      const badge = el("span", {
-        className: "dm-badge",
-        style: `--badge-color: ${color}`,
-      });
-      badge.textContent = text;
-      return badge;
-    },
-
-    buildBadgesFromPost(post, maxBadges = 3) {
-      const fragment = document.createDocumentFragment();
-      const shown = new Set();
-      let count = 0;
-
-      const addBadge = (text) => {
-        if (count >= maxBadges) return;
-        const cfg = this.BADGE_CONFIG[text];
-        if (!cfg || shown.has(cfg.label)) return;
-        shown.add(cfg.label);
-        fragment.appendChild(this.buildBadge(cfg.label, cfg.color));
-        count++;
-      };
-
-      for (const q of post.quality) addBadge(q);
-      for (const c of post.codec) addBadge(c);
-      for (const a of post.audio) {
-        if (/dual/i.test(a)) addBadge("Dual Audio");
-        else if (/multi/i.test(a)) addBadge("Multi Audio");
-      }
-      if (post.subtitles) addBadge("ESubs");
-      return fragment;
-    },
-
     buildCard(post) {
       const card = el("article", { className: "dm-card", "data-id": post.id });
       const link = el("a", {
@@ -627,12 +581,6 @@
         meta.appendChild(catSpan);
       }
       info.appendChild(meta);
-
-      if (post.quality.length > 0 || post.codec.length > 0) {
-        const inlineBadges = el("div", { className: "dm-card__inline-badges" });
-        inlineBadges.appendChild(this.buildBadgesFromPost(post, 4));
-        info.appendChild(inlineBadges);
-      }
 
       card.appendChild(info);
       return card;
@@ -1372,36 +1320,6 @@
       metaCol.appendChild(
         el("h1", { className: "dm-single__title", textContent: detailTitle }),
       );
-
-      if (parsed.quality.length > 0 || parsed.codec.length > 0) {
-        const badgeRow = el("div", { className: "dm-single__badges" });
-        const allBadges = [
-          ...parsed.quality.map((q) => ({
-            label: q,
-            color: getQualityColor(q),
-          })),
-          ...parsed.codec.map((c) => ({ label: c, color: "#06b6d4" })),
-          ...(parsed.audio.some((a) => /dual/i.test(a))
-            ? [{ label: "Dual Audio", color: "#f97316" }]
-            : []),
-          ...(parsed.audio.some((a) => /multi/i.test(a))
-            ? [{ label: "Multi Audio", color: "#f97316" }]
-            : []),
-          ...(parsed.subtitles
-            ? [{ label: parsed.subtitles, color: "#8b5cf6" }]
-            : []),
-        ];
-        allBadges.forEach((b) => {
-          badgeRow.appendChild(
-            el("span", {
-              className: "dm-badge dm-badge--lg",
-              style: `--badge-color:${b.color}`,
-              textContent: b.label,
-            }),
-          );
-        });
-        metaCol.appendChild(badgeRow);
-      }
 
       // Build info grid — merge releaseInfo + any parsed fallback fields
       const infoItems =
