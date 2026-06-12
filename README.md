@@ -27,6 +27,7 @@ A modern Chrome Extension that completely transforms the DesireMovies browsing e
 * Local caching using `chrome.storage.local`
 * Instant subsequent loads with zero network requests
 * Shimmer placeholders during rating fetch
+* Resilient fallback displaying: shows N/A and links directly to the title page if the rating is unavailable, instead of hiding the IMDb row
 
 ### ⚡ Automated Download Bypass
 
@@ -37,7 +38,15 @@ A modern Chrome Extension that completely transforms the DesireMovies browsing e
 * Cloudflare-safe fallback workflow
 * Automatic GDFlix navigation
 * Auto-click Instant Download buttons
+* Automatic FastCDN interaction: detects the final download page, waits for the loader to resolve, auto-clicks "Download Here", and closes the tab after 5 seconds
 * Self-closing automation tabs
+
+### 📁 Native Filename Auto-Cleaning
+
+* Automatic download name normalization via `chrome.downloads` API
+* Cleans up DesireMovies branding, tags (e.g. 10bit, hevc, hd) and dot spacing on-the-fly
+* Standardizes TV show episode format (e.g. S01 EP01 or S01 EP01-05)
+* 100% native client-side naming overrides directly in the browser, eliminating the need for external scripts
 
 ---
 
@@ -73,6 +82,9 @@ graph TD
 
     H --> M[gdflix.js]
     M --> N[Instant Download]
+
+    N --> O[fastcdn.js]
+    O --> P[Auto Click & Close]
 ```
 
 ---
@@ -144,7 +156,8 @@ If headless bypass fails:
 | `shield.js`     | GyaniGurus     | `document_start` | MAIN           | Popup suppression                       |
 | `gyanigurus.js` | GyaniGurus     | `document_end`   | ISOLATED       | Redirect automation                     |
 | `gdflix.js`     | GDFlix         | `document_end`   | ISOLATED       | Instant download automation             |
-| `background.js` | Service Worker | N/A              | Service Worker | Headless bypass engine                  |
+| `fastcdn.js`    | FastCDN        | `document_end`   | ISOLATED       | Final download automation & auto-close  |
+| `background.js` | Service Worker | N/A              | Service Worker | Headless bypass, dynamic injection & renaming |
 
 ---
 
@@ -159,6 +172,7 @@ DesireMovies-Reimagined/
 ├── shield.js
 ├── gyanigurus.js
 ├── gdflix.js
+├── fastcdn.js
 ├── redesign.css
 │
 ├── docs/
