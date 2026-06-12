@@ -15,6 +15,7 @@ const activeBypasses = new Map();
 const bypassCache = new Map();
 const failureCounters = new Map(); // domain -> count
 const fallbackDomains = new Set(); // domains flagged for foreground fallback
+const registeredMirrors = new Set(); // cached registered mirror domains
 
 let isInitialized = false;
 const initPromise = (async () => {
@@ -130,20 +131,172 @@ function isValidHttpUrl(string) {
   return url.protocol === "http:" || url.protocol === "https:";
 }
 
-function isAllowedFetchUrl(urlStr) {
-  if (!isValidHttpUrl(urlStr)) return false;
-  const url = new URL(urlStr);
-  return (
-    url.hostname === "sg.media-imdb.com" ||
-    url.hostname === "www.imdb.com" ||
-    url.hostname.endsWith(".imdb.com")
-  );
-}
-
 function isAllowedBypassUrl(urlStr) {
   if (!isValidHttpUrl(urlStr)) return false;
   const url = new URL(urlStr);
-  return url.hostname.includes("gyanigurus") || url.hostname.includes("gdflix");
+  const host = url.hostname;
+  return (
+    host === "gyanigurus.xyz" ||
+    host.endsWith(".gyanigurus.xyz") ||
+    host === "new.gdflix.io" ||
+    host.endsWith(".gdflix.io")
+  );
+}
+
+/**
+ * Helper to normalize strings for robust comparison
+ */
+function normalizeString(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Service Worker side IMDb rating pipeline
+ */
+async function getImdbRating(title, year) {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) return { rating: "N/A", id: null };
+
+  const cacheKey = `imdb_${trimmedTitle.toLowerCase()}`;
+  
+  // 1. Check local cache first
+  try {
+    const result = await chrome.storage.local.get(cacheKey);
+    const cached = result[cacheKey];
+    if (cached?.rating && cached?.id) {
+      return { rating: cached.rating, id: cached.id };
+    }
+  } catch (err) {
+    console.warn("[DM Reimagined] Error reading local cache:", err);
+  }
+
+  // 2. Fetch from IMDb Suggestions API
+  let imdbId = null;
+  try {
+    const firstChar = trimmedTitle.charAt(0).toLowerCase();
+    const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(trimmedTitle.toLowerCase())}.json`;
+    const suggestRes = await fetchWithTimeout(suggestUrl);
+    const jsonpText = await suggestRes.text();
+    
+    if (jsonpText) {
+      let suggestData = null;
+      const startIdx = jsonpText.indexOf("(");
+      const endIdx = jsonpText.lastIndexOf(")");
+      if (startIdx !== -1 && endIdx !== -1) {
+        try {
+          suggestData = JSON.parse(jsonpText.slice(startIdx + 1, endIdx));
+        } catch (e) {
+          console.warn("[DM Reimagined] JSONP parse failed:", e);
+        }
+      }
+      
+      if (suggestData?.d?.length > 0) {
+        const queryTitleNormalized = normalizeString(trimmedTitle);
+        const targetYear = year ? parseInt(year) : null;
+        
+        // A. Match exactly (normalized) and within 1 year
+        let best = suggestData.d.find(
+          (item) =>
+            item.id &&
+            item.id.startsWith("tt") &&
+            item.l &&
+            normalizeString(item.l) === queryTitleNormalized &&
+            (!targetYear || !item.y || Math.abs(item.y - targetYear) <= 1)
+        );
+        
+        // B. Match exactly (normalized) regardless of year
+        if (!best) {
+          best = suggestData.d.find(
+            (item) =>
+              item.id &&
+              item.id.startsWith("tt") &&
+              item.l &&
+              normalizeString(item.l) === queryTitleNormalized
+          );
+        }
+        
+        // C. Fallback: match by title contains and is a film/tv show
+        if (!best) {
+          best = suggestData.d.find(
+            (item) =>
+              item.id &&
+              item.id.startsWith("tt") &&
+              (item.qid === "movie" ||
+                item.qid === "tvSeries" ||
+                item.qid === "tvMiniSeries")
+          );
+        }
+        
+        if (best) imdbId = best.id;
+      }
+    }
+  } catch (err) {
+    console.warn("[DM Reimagined] Suggestion fetch failed:", err);
+  }
+
+  // 3. Fetch IMDb Details Page and Parse Rating
+  let imdbRating = null;
+  if (imdbId) {
+    try {
+      const ratingsUrl = `https://www.imdb.com/title/${imdbId}/`;
+      const ratingsRes = await fetchWithTimeout(ratingsUrl);
+      const html = await ratingsRes.text();
+      
+      if (html) {
+        // Method A: JSON-LD script blocks
+        const ldMatches = [...html.matchAll(/<script\s+type=["']application\/ld\+json["']\s*>([\s\S]*?)<\/script>/gi)];
+        for (const match of ldMatches) {
+          try {
+            const parsed = JSON.parse(match[1]);
+            const items = Array.isArray(parsed) ? parsed : [parsed];
+            for (const item of items) {
+              const subItems = item["@graph"] ? item["@graph"] : [item];
+              for (const sub of subItems) {
+                if (sub.aggregateRating?.ratingValue) {
+                  imdbRating = `${parseFloat(sub.aggregateRating.ratingValue).toFixed(1)}/10`;
+                  break;
+                }
+              }
+              if (imdbRating) break;
+            }
+          } catch (e) {}
+          if (imdbRating) break;
+        }
+
+        // Fallback B: Aggregated rating test-id regex (avoids DOMParser in service worker!)
+        if (!imdbRating) {
+          const scoreMatch = html.match(/data-testid="hero-rating-bar__aggregate-rating__score"[^>]*>\s*<span[^>]*>\s*([\d.]+)\s*<\/span>/i);
+          if (scoreMatch) {
+            imdbRating = `${parseFloat(scoreMatch[1]).toFixed(1)}/10`;
+          }
+        }
+
+        // Fallback C: Raw regex ratingValue match
+        if (!imdbRating) {
+          const ratingMatch = html.match(/"ratingValue"\s*:\s*"?([\d.]+)"?/);
+          if (ratingMatch) {
+            imdbRating = `${parseFloat(ratingMatch[1]).toFixed(1)}/10`;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[DM Reimagined] Detail page fetch/parse failed:", err);
+    }
+  }
+
+  // 4. Cache and return the result
+  if (imdbId && imdbRating) {
+    try {
+      await chrome.storage.local.set({
+        [cacheKey]: { rating: imdbRating, id: imdbId, timestamp: Date.now() }
+      });
+    } catch (err) {
+      console.warn("[DM Reimagined] Error saving local cache:", err);
+    }
+    return { rating: imdbRating, id: imdbId };
+  }
+  
+  return { rating: "N/A", id: imdbId };
 }
 
 /**
@@ -242,24 +395,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { action, payload = {} } = message;
 
   switch (action) {
-    case "fetch":
-      (async () => {
-        try {
-          if (!payload.url || !isAllowedFetchUrl(payload.url)) {
-            throw new Error("Target fetch URL is not allowed or is invalid");
-          }
-          const response = await fetchWithTimeout(payload.url, payload.options);
-          const text = await response.text();
-          sendResponse({
-            success: true,
-            data: { status: response.status, statusText: response.statusText, text }
-          });
-        } catch (err) {
-          sendResponse({ success: false, error: err.message });
-        }
-      })();
-      return true; // Keep channel open
-
     case "close_tab":
       if (sender.tab?.id) {
         const tabId = sender.tab.id;
@@ -322,34 +457,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })();
       return true; // Keep channel open
 
+    case "get_imdb_rating":
+      (async () => {
+        try {
+          const result = await getImdbRating(payload.title, payload.year);
+          sendResponse({ success: true, ...result });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true; // Keep channel open
+
     default:
       sendResponse({ success: false, error: `Unknown action: ${action}` });
       return false;
   }
 });
 
-// Helper to get the base second-level domain (e.g. desiremovies.casa)
+// Helper to get the base second-level domain (e.g. desiremovies.casa) with security checks to prevent subdomain hijacking
 function getBaseDesireMoviesDomain(hostname) {
   const parts = hostname.split(".");
-  const idx = parts.findIndex(p => p.includes("desiremovies"));
-  if (idx !== -1) {
-    return parts.slice(idx).join(".");
+  if (parts.length < 2) return hostname;
+  
+  // Verify second-to-last part to ensure desiremovies is the SLD (or SLD on multi-part TLD)
+  const sld = parts[parts.length - 2];
+  if (sld.includes("desiremovies")) {
+    return parts.slice(-2).join(".");
   }
-  return hostname;
+  
+  if (parts.length >= 3) {
+    const sld2 = parts[parts.length - 3];
+    if (sld2.includes("desiremovies")) {
+      return parts.slice(-3).join(".");
+    }
+  }
+  return null;
 }
 
 // Function to dynamically register content script matches for a new base domain
 async function registerMirrorDomain(hostname) {
   try {
-    const scriptId = "dm-dynamic-script";
     const baseDomain = getBaseDesireMoviesDomain(hostname);
+    if (!baseDomain) return;
+
+    if (registeredMirrors.has(baseDomain)) return;
+
+    const scriptId = "dm-dynamic-script";
     const pattern = `*://*.${baseDomain}/*`;
     
     const registered = await chrome.scripting.getRegisteredContentScripts();
     const existing = registered.find(s => s.id === scriptId);
     
     if (existing) {
-      if (existing.matches.includes(pattern)) return;
+      if (existing.matches.includes(pattern)) {
+        registeredMirrors.add(baseDomain);
+        return;
+      }
       
       const newMatches = [...existing.matches, pattern];
       await chrome.scripting.updateContentScripts([{
@@ -366,6 +529,7 @@ async function registerMirrorDomain(hostname) {
         allFrames: false
       }]);
     }
+    registeredMirrors.add(baseDomain);
   } catch (err) {
     console.error("[DM Reimagined] Failed to register dynamic script:", err);
   }
@@ -378,6 +542,10 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
     try {
       const url = new URL(details.url);
       const baseDomain = getBaseDesireMoviesDomain(url.hostname);
+      if (!baseDomain) return;
+
+      if (registeredMirrors.has(baseDomain)) return;
+      
       const pattern = `*://*.${baseDomain}/*`;
       
       // Get registered scripts to check if this hostname is already registered
@@ -385,7 +553,9 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
       const existing = registered.find(s => s.id === "dm-dynamic-script");
       const isRegistered = existing && existing.matches.includes(pattern);
       
-      if (!isRegistered) {
+      if (isRegistered) {
+        registeredMirrors.add(baseDomain);
+      } else {
         // Register so subsequent page loads run at document_start natively
         await registerMirrorDomain(url.hostname);
         

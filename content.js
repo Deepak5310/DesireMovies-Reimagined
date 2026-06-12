@@ -112,14 +112,6 @@
     });
   }
 
-  async function bgFetch(url, options = {}) {
-    const response = await sendBgMessage("fetch", { url, options });
-    if (response?.success) {
-      return response.data;
-    }
-    throw new Error(response?.error || "Background fetch failed");
-  }
-
   function queryText(parent, selector) {
     return parent.querySelector(selector)?.textContent?.trim() || "";
   }
@@ -1431,6 +1423,39 @@
         const groupsWrap = el("div", {
           className: "dm-single__dl-groups-wrap",
         });
+
+        // Use event delegation for download clicks
+        groupsWrap.addEventListener("click", async (e) => {
+          const a = e.target.closest(".dm-single__dl-btn");
+          if (!a) return;
+          
+          const href = a.getAttribute("href");
+          if (href && href.includes("gyanigurus")) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const originalHTML = a.innerHTML;
+            a.innerHTML = `<svg class="dm-spinner" style="animation: dmSpin 1s linear infinite; margin-right: 6px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Bypassing...`;
+            a.style.pointerEvents = "none";
+
+            try {
+              const response = await sendBgMessage("bypass_gyanigurus", { url: href });
+
+              if (response && response.success && response.gdflixUrl) {
+                window.open(response.gdflixUrl, "_blank");
+              } else {
+                window.open(href, "_blank");
+              }
+            } catch (err) {
+              console.warn("[DM Reimagined] Bypass failed, falling back:", err);
+              window.open(href, "_blank");
+            } finally {
+              a.innerHTML = originalHTML;
+              a.style.pointerEvents = "";
+            }
+          }
+        });
+
         downloadSections.forEach((section) => {
           const group = el("div", { className: "dm-single__dl-group" });
           group.appendChild(
@@ -1451,68 +1476,41 @@
             section.items
               .filter((item) => item.links.length > 0)
               .forEach((item) => {
-              const row = el("div", { className: "dm-single__dl-row" });
-              const label = el("div", { className: "dm-single__dl-label" });
-              label.appendChild(
-                el("span", {
-                  className: "dm-badge",
-                  style: `--badge-color:${getQualityColor(item.label)}`,
-                  textContent: item.label,
-                }),
-              );
-              row.appendChild(label);
-
-              const linksWrap = el("div", { className: "dm-single__dl-links" });
-              if (item.links.length === 0) {
-                linksWrap.appendChild(
+                const row = el("div", { className: "dm-single__dl-row" });
+                const label = el("div", { className: "dm-single__dl-label" });
+                label.appendChild(
                   el("span", {
-                    className: "dm-single__dl-nolink",
-                    textContent: "-",
+                    className: "dm-badge",
+                    style: `--badge-color:${getQualityColor(item.label)}`,
+                    textContent: item.label,
                   }),
                 );
-              } else {
-                item.links.forEach((link) => {
-                  const a = el("a", {
-                    href: link.href,
-                    className: "dm-single__dl-btn",
-                    target: "_blank",
-                    rel: "noopener noreferrer",
+                row.appendChild(label);
+
+                const linksWrap = el("div", { className: "dm-single__dl-links" });
+                if (item.links.length === 0) {
+                  linksWrap.appendChild(
+                    el("span", {
+                      className: "dm-single__dl-nolink",
+                      textContent: "-",
+                    }),
+                  );
+                } else {
+                  item.links.forEach((link) => {
+                    const a = el("a", {
+                      href: link.href,
+                      className: "dm-single__dl-btn",
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                    });
+                    a.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> ${link.text || "Download"}`;
+
+                    linksWrap.appendChild(a);
                   });
-                  a.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> ${link.text || "Download"}`;
-
-                  a.addEventListener("click", async (e) => {
-                    if (link.href.includes("gyanigurus")) {
-                      e.preventDefault();
-                      e.stopPropagation();
-
-                      const originalHTML = a.innerHTML;
-                      a.innerHTML = `<svg class="dm-spinner" style="animation: dmSpin 1s linear infinite; margin-right: 6px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Bypassing...`;
-                      a.style.pointerEvents = "none";
-
-                      try {
-                        const response = await sendBgMessage("bypass_gyanigurus", { url: link.href });
-
-                        if (response && response.success && response.gdflixUrl) {
-                          window.open(response.gdflixUrl, "_blank");
-                        } else {
-                          window.open(link.href, "_blank");
-                        }
-                      } catch (err) {
-                        console.warn("[DM Reimagined] Bypass failed, falling back:", e, err);
-                        window.open(link.href, "_blank");
-                      } finally {
-                        a.innerHTML = originalHTML;
-                        a.style.pointerEvents = "";
-                      }
-                    }
-                  });
-
-                  linksWrap.appendChild(a);
-                });
-              }
-              row.appendChild(linksWrap);
-              group.appendChild(row);
-            });
+                }
+                row.appendChild(linksWrap);
+                group.appendChild(row);
+              });
           }
           groupsWrap.appendChild(group);
         });
@@ -1591,186 +1589,37 @@
       try {
         const queryTitle = data.parsed.cleanTitle;
         const queryYear = data.parsed.year || "";
-        const targetYear = queryYear ? parseInt(queryYear) : null;
-        let imdbRating = null;
-        let imdbId = null;
-
-        const trimmedTitle = queryTitle.trim();
-        if (trimmedTitle) {
-          const cacheKey = `imdb_${trimmedTitle.toLowerCase()}`;
-          const result = await chrome.storage.local.get(cacheKey);
-          const cached = result[cacheKey];
-
-          if (cached?.rating && cached?.id) {
-            const imdbValEl = document.querySelector(".dm-single__info-val--imdb");
-            if (imdbValEl) {
-              imdbValEl.innerHTML = "";
-              imdbValEl.appendChild(
-                el("a", {
-                  href: `https://www.imdb.com/title/${cached.id}/`,
-                  target: "_blank",
-                  rel: "noopener noreferrer",
-                  className: "dm-single__imdb-link",
-                  textContent: cached.rating,
-                }),
-              );
-            }
-            return;
-          }
-
-          const firstChar = trimmedTitle.charAt(0).toLowerCase();
-          const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(trimmedTitle.toLowerCase())}.json`;
-          const suggestRes = await bgFetch(suggestUrl);
-
-          const jsonpText = suggestRes?.text;
-          if (jsonpText) {
-            let suggestData = null;
-            const startIdx = jsonpText.indexOf("(");
-            const endIdx = jsonpText.lastIndexOf(")");
-            if (startIdx !== -1 && endIdx !== -1) {
-              try {
-                suggestData = JSON.parse(jsonpText.slice(startIdx + 1, endIdx));
-              } catch (e) {
-                console.warn("[DM Reimagined] JSONP parse failed", e);
-              }
-            }
-            if (suggestData?.d?.length > 0) {
-              const queryTitleLower = trimmedTitle.toLowerCase();
-
-              let best = suggestData.d.find(
-                (item) =>
-                  item.id &&
-                  item.id.startsWith("tt") &&
-                  item.l &&
-                  item.l.toLowerCase() === queryTitleLower &&
-                  (!targetYear ||
-                    !item.y ||
-                    Math.abs(item.y - targetYear) <= 1),
-              );
-              if (!best)
-                best = suggestData.d.find(
-                  (item) =>
-                    item.id &&
-                    item.id.startsWith("tt") &&
-                    item.l &&
-                    item.l.toLowerCase() === queryTitleLower,
-                );
-              if (!best)
-                best = suggestData.d.find(
-                  (item) =>
-                    item.id &&
-                    item.id.startsWith("tt") &&
-                    (item.qid === "movie" ||
-                      item.qid === "tvSeries" ||
-                      item.qid === "tvMiniSeries"),
-                );
-
-              if (best) imdbId = best.id;
-            }
-
-            if (imdbId) {
-              const ratingsUrl = `https://www.imdb.com/title/${imdbId}/`;
-              const ratingsRes = await bgFetch(ratingsUrl);
-              const html = ratingsRes?.text;
-              if (html) {
-                // Method A: JSON-LD script blocks
-                const ldMatches = [...html.matchAll(/<script\s+type=["']application\/ld\+json["']\s*>([\s\S]*?)<\/script>/gi)];
-                for (const match of ldMatches) {
-                  try {
-                    const parsed = JSON.parse(match[1]);
-                    const items = Array.isArray(parsed) ? parsed : [parsed];
-                    for (const item of items) {
-                      const subItems = item["@graph"] ? item["@graph"] : [item];
-                      for (const sub of subItems) {
-                        if (sub.aggregateRating?.ratingValue) {
-                          imdbRating = `${parseFloat(sub.aggregateRating.ratingValue).toFixed(1)}/10`;
-                          break;
-                        }
-                      }
-                      if (imdbRating) break;
-                    }
-                  } catch (e) {}
-                  if (imdbRating) break;
-                }
-
-                // Fallback B: DOMParser parsing test-id aggregate rating score
-                if (!imdbRating) {
-                  try {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(html, "text/html");
-                    const ratingValEl = doc.querySelector('[data-testid="hero-rating-bar__aggregate-rating__score"] span');
-                    if (ratingValEl) {
-                      const scoreText = ratingValEl.textContent.trim();
-                      if (scoreText) {
-                        imdbRating = `${scoreText}/10`;
-                      }
-                    }
-                  } catch (e) {}
-                }
-
-                // Fallback C: Raw regex ratingValue match
-                if (!imdbRating) {
-                  const ratingMatch = html.match(/"ratingValue"\s*:\s*"?([\d.]+)"?/);
-                  if (ratingMatch) {
-                    imdbRating = `${parseFloat(ratingMatch[1]).toFixed(1)}/10`;
-                  }
-                }
-              }
-            }
-          }
-
-          if (imdbId && imdbRating) {
-            await chrome.storage.local.set({
-              [cacheKey]: { rating: imdbRating, id: imdbId, timestamp: Date.now() }
-            });
-          }
-        }
+        
+        const response = await sendBgMessage("get_imdb_rating", {
+          title: queryTitle,
+          year: queryYear,
+        });
 
         const imdbValEl = document.querySelector(".dm-single__info-val--imdb");
         if (imdbValEl) {
-          if (imdbRating && imdbId) {
-            imdbValEl.innerHTML = "";
+          imdbValEl.innerHTML = "";
+          if (response && response.success && response.rating && response.rating !== "N/A") {
             imdbValEl.appendChild(
               el("a", {
-                href: `https://www.imdb.com/title/${imdbId}/`,
+                href: `https://www.imdb.com/title/${response.id}/`,
                 target: "_blank",
                 rel: "noopener noreferrer",
                 className: "dm-single__imdb-link",
-                textContent: imdbRating,
+                textContent: response.rating,
               }),
             );
-          } else if (imdbId && imdbValEl.textContent.trim() && imdbValEl.textContent.trim() !== "N/A" && imdbValEl.textContent.trim() !== "__LOADING__") {
-            const currentRating = imdbValEl.textContent.trim();
-            imdbValEl.innerHTML = "";
+          } else if (response && response.success && response.id) {
             imdbValEl.appendChild(
               el("a", {
-                href: `https://www.imdb.com/title/${imdbId}/`,
+                href: `https://www.imdb.com/title/${response.id}/`,
                 target: "_blank",
                 rel: "noopener noreferrer",
                 className: "dm-single__imdb-link",
-                textContent: currentRating,
+                textContent: "N/A",
               }),
             );
-          } else if (!imdbRating && (!imdbValEl.textContent.trim() || imdbValEl.textContent.trim() === "N/A" || imdbValEl.textContent.trim() === "__LOADING__")) {
-            if (imdbId) {
-              imdbValEl.innerHTML = "";
-              imdbValEl.appendChild(
-                el("a", {
-                  href: `https://www.imdb.com/title/${imdbId}/`,
-                  target: "_blank",
-                  rel: "noopener noreferrer",
-                  className: "dm-single__imdb-link",
-                  textContent: "N/A",
-                }),
-              );
-            } else {
-              imdbValEl.textContent = "N/A";
-            }
-            const dt = imdbValEl.previousElementSibling;
-            if (dt && dt.classList.contains("dm-single__info-key")) {
-              dt.style.display = "";
-            }
-            imdbValEl.style.display = "";
+          } else {
+            imdbValEl.textContent = "N/A";
           }
         }
       } catch (err) {

@@ -23,12 +23,7 @@
   },
   "permissions": ["storage", "alarms", "scripting", "webNavigation", "downloads"],
   "host_permissions": [
-    "<all_urls>",
-    "https://sg.media-imdb.com/*",
-    "https://www.imdb.com/*",
-    "https://gyanigurus.xyz/*",
-    "https://new.gdflix.io/*",
-    "https://fastcdn-dl.pages.dev/*"
+    "<all_urls>"
   ],
   "content_scripts": [
     {
