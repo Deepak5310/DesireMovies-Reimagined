@@ -588,6 +588,9 @@ function cleanFilename(filename) {
   let baseName = filename.slice(0, lastDotIdx);
   const ext = filename.slice(lastDotIdx);
   
+  // Strip browser-added duplicate suffix (e.g. " (1)")
+  baseName = baseName.replace(/\s*\(\d+\)$/, "");
+  
   let ep = "";
   
   // 1. Parse TV show episode numbers/ranges (e.g. EP.1.5. or EP.01.)
@@ -608,11 +611,11 @@ function cleanFilename(filename) {
     baseName = baseName.replace(/^EP(\.\d+)+\./i, "");
   }
   
-  // 2. Remove tags and DesireMovies branding
+  // 2. Remove tags and DesireMovies branding (including any mirror domain suffix) safely using word boundaries
   baseName = baseName
-    .replace(/[\.\- ]?desiremovies[\.\- ]?[a-z]*/gi, "")
-    .replace(/[\.\- ]?10bits?/gi, "")
-    .replace(/[\.\- ]?(hevc|hq|hd)/gi, "");
+    .replace(/\bdesiremovies(?:[\.\- ]+[a-z0-9\-]+)*\b/gi, "")
+    .replace(/\b10bits?\b/gi, "")
+    .replace(/\b(hevc|hq|hd)\b/gi, "");
     
   // 3. Capitalize WEB-DL
   baseName = baseName.replace(/\bwebdl\b/gi, "WEB-DL");
@@ -622,8 +625,15 @@ function cleanFilename(filename) {
     baseName = baseName.replace(/\b(S\d{2})\b/gi, `$1 ${ep}`);
   }
   
-  // 5. Clean up multiple spaces, convert dots to spaces
-  const cleanName = baseName.replace(/\./g, " ").replace(/\s+/g, " ").trim();
+  // 5. Clean up multiple spaces, convert dots to spaces, and capitalize the first letter of each word to Title Case
+  const cleanName = baseName
+    .replace(/\./g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
   
   return cleanName + ext;
 }
