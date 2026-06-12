@@ -27,7 +27,8 @@
     "https://sg.media-imdb.com/*",
     "https://www.imdb.com/*",
     "https://gyanigurus.xyz/*",
-    "https://new.gdflix.io/*"
+    "https://new.gdflix.io/*",
+    "https://fastcdn-dl.pages.dev/*"
   ],
   "content_scripts": [
     {
@@ -44,6 +45,11 @@
     {
       "matches": ["https://new.gdflix.io/*"],
       "js": ["gdflix.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://fastcdn-dl.pages.dev/*"],
+      "js": ["fastcdn.js"],
       "run_at": "document_end"
     }
   ]
