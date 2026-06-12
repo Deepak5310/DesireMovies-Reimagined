@@ -407,3 +407,64 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
 }, {
   url: [{ hostContains: "desiremovies" }]
 });
+
+/**
+ * Clean and normalize downloaded filenames (mimics rename.ps1 logic)
+ */
+function cleanFilename(filename) {
+  const lastDotIdx = filename.lastIndexOf(".");
+  if (lastDotIdx === -1) return filename;
+  
+  let baseName = filename.slice(0, lastDotIdx);
+  const ext = filename.slice(lastDotIdx);
+  
+  let ep = "";
+  
+  // 1. Parse TV show episode numbers/ranges (e.g. EP.1.5. or EP.01.)
+  const epMatch = baseName.match(/^EP((\.\d+)+)\./i);
+  if (epMatch) {
+    const numbers = epMatch[1].split(".").filter(Boolean).map(Number);
+    if (numbers.length > 0) {
+      const first = numbers[0];
+      const last = numbers[numbers.length - 1];
+      const pad = (num) => String(num).padStart(2, "0");
+      
+      if (first === last) {
+        ep = `EP${pad(first)}`;
+      } else {
+        ep = `EP${pad(first)}-${pad(last)}`;
+      }
+    }
+    baseName = baseName.replace(/^EP(\.\d+)+\./i, "");
+  }
+  
+  // 2. Remove tags and DesireMovies branding
+  baseName = baseName
+    .replace(/[\.\- ]?desiremovies[\.\- ]?[a-z]*/gi, "")
+    .replace(/[\.\- ]?10bits?/gi, "")
+    .replace(/[\.\- ]?(hevc|hq|hd)/gi, "");
+    
+  // 3. Capitalize WEB-DL
+  baseName = baseName.replace(/\bwebdl\b/gi, "WEB-DL");
+  
+  // 4. Inject EP information after Sxx if present
+  if (ep) {
+    baseName = baseName.replace(/\b(S\d{2})\b/gi, `$1 ${ep}`);
+  }
+  
+  // 5. Clean up multiple spaces, convert dots to spaces
+  const cleanName = baseName.replace(/\./g, " ").replace(/\s+/g, " ").trim();
+  
+  return cleanName + ext;
+}
+
+// Intercept downloads and apply cleaning rules to filenames before they are saved
+chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  try {
+    const cleanName = cleanFilename(downloadItem.filename);
+    suggest({ filename: cleanName });
+  } catch (err) {
+    console.error("[DM Reimagined] Error during filename suggestion:", err);
+    suggest(); // Fallback to default name if error occurs
+  }
+});

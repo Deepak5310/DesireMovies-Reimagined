@@ -21,7 +21,7 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["storage", "alarms", "scripting", "webNavigation"],
+  "permissions": ["storage", "alarms", "scripting", "webNavigation", "downloads"],
   "host_permissions": [
     "<all_urls>",
     "https://sg.media-imdb.com/*",
