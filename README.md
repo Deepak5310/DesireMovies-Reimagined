@@ -167,10 +167,10 @@ DesireMovies-Reimagined/
 │       └── details.png
 │
 └── icons/
-    ├── 16.png
-    ├── 32.png
-    ├── 48.png
-    └── 128.png
+    ├── icon16.png
+    ├── icon32.png
+    ├── icon48.png
+    └── icon128.png
 ```
 
 ---

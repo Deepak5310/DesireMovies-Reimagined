@@ -64,11 +64,5 @@
       "run_at": "document_end"
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["redesign.css"],
-      "matches": ["<all_urls>"]
-    }
-  ]
 }
 

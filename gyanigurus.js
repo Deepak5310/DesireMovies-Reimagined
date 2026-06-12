@@ -5,8 +5,12 @@
 (function () {
   "use strict";
 
+  const BUTTON_TEXT_RE = /click\s*here|open\s*link/i;
+
   let openBtnClicked = false;
   let done = false;
+  let safetyTimeoutId = null;
+  let observer = null;
 
   function debounce(fn, delay) {
     let timeout;
@@ -21,7 +25,7 @@
     for (const btn of document.querySelectorAll("button")) {
       if (
         (btn.getAttribute("onclick") || "").includes("show_content_v") ||
-        /click\s*here|open\s*link/i.test(btn.textContent)
+        BUTTON_TEXT_RE.test(btn.textContent)
       ) {
         btn.click();
         openBtnClicked = true;
@@ -37,6 +41,15 @@
     if (a) {
       done = true;
       a.click();
+      
+      // Cleanup observer and timeout immediately to prevent memory leak
+      if (observer) {
+        observer.disconnect();
+      }
+      if (safetyTimeoutId) {
+        clearTimeout(safetyTimeoutId);
+      }
+      
       // Close this gyanigurus tab after gdflix opens (reduced delay for performance)
       setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
       return true;
@@ -56,20 +69,21 @@
 
     // 4. Fallback to MutationObserver if changes are asynchronous (debounced to save CPU)
     const debouncedCallback = debounce(() => {
-      if (tryClickGdflix()) {
-        observer.disconnect();
-        return;
-      }
+      if (tryClickGdflix()) return;
       if (!openBtnClicked) {
         tryClickOpenButton();
       }
     }, 150);
 
-    const observer = new MutationObserver(debouncedCallback);
+    observer = new MutationObserver(debouncedCallback);
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     // Safety timeout to prevent resource leak
-    setTimeout(() => observer.disconnect(), 15_000);
+    safetyTimeoutId = setTimeout(() => {
+      if (observer) {
+        observer.disconnect();
+      }
+    }, 15_000);
   }
 
   run();

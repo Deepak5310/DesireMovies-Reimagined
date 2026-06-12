@@ -20,17 +20,22 @@
   function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
+      if (v === undefined || v === null) continue;
       if (k === "className") node.className = v;
       else if (k === "innerHTML") node.innerHTML = v;
       else if (k === "textContent") node.textContent = v;
-      else if (k.startsWith("data-")) node.dataset[k.slice(5)] = v;
+      else if (k.startsWith("data-")) {
+        const datasetKey = k.slice(5).replace(/-([a-z])/g, (m, c) => c.toUpperCase());
+        node.dataset[datasetKey] = v;
+      }
       else node.setAttribute(k, v);
     }
     for (const child of children) {
-      if (child)
+      if (child || child === 0 || child === "") {
         node.appendChild(
-          typeof child === "string" ? document.createTextNode(child) : child,
+          child instanceof Node ? child : document.createTextNode(String(child))
         );
+      }
     }
     return node;
   }
@@ -130,6 +135,114 @@
     'article[id^="post-"]',
     ".mh-posts article",
     "#mh-content article",
+  ];
+
+  const NAVBAR_GROUPS = [
+    {
+      name: "South Cinema",
+      items: [
+        {
+          text: "South Movies - Hindi",
+          slug: "south-movies-hindi",
+          regex: /south.*hindi/i,
+        },
+      ],
+    },
+    {
+      name: "Bollywood & Regional",
+      items: [
+        {
+          text: "Bollywood Movies",
+          slug: "bollywood-movies",
+          regex: /bollywood/i,
+        },
+        {
+          text: "Punjabi Movies",
+          slug: "punjabi-movies",
+          regex: /punjabi/i,
+        },
+        {
+          text: "Gujarati Movies",
+          slug: "gujarati-movies",
+          regex: /gujarati/i,
+        },
+        {
+          text: "Bhojpuri Movies",
+          slug: "bhojpuri-movies",
+          regex: /bhojpuri/i,
+        },
+      ],
+    },
+    {
+      name: "Hollywood & Foreign",
+      items: [
+        {
+          text: "Hollywood Movies - Hindi",
+          slug: "hollywood-movies-hindi",
+          regex: /hollywood.*hindi/i,
+        },
+        {
+          text: "Hollywood Movies - English",
+          slug: "hollywood-movies-english",
+          regex: /hollywood.*(english|eng)/i,
+        },
+        {
+          text: "Korean Movie - Hindi",
+          slug: "korean-movies-hindi",
+          regex: /korean.*movie/i,
+        },
+      ],
+    },
+    {
+      name: "TV & Web Series",
+      items: [
+        {
+          text: "Web Series",
+          slug: "web-series",
+          regex: /^\s*web\s*series/i,
+        },
+        {
+          text: "TV Show",
+          slug: "tv-shows",
+          regex: /^\s*tv\s*shows?/i,
+        },
+        {
+          text: "Korean Show - Hindi",
+          slug: "korean-shows-hindi",
+          regex: /korean.*show/i,
+        },
+        {
+          text: "English TV Show - Hindi",
+          slug: "english-tv-shows-hindi",
+          regex: /english.*(tv|show).*hindi/i,
+        },
+      ],
+    },
+    {
+      name: "Classics",
+      items: [
+        {
+          text: "Old is Gold Movies",
+          slug: "old-is-gold-movies",
+          regex: /old.*gold/i,
+        },
+      ],
+    },
+  ];
+
+  const RELEASE_INFO_PATTERNS = [
+    { key: "Title", re: /Title[:\t \u00a0]+([^\n\r]+)/i },
+    { key: "Year", re: /Year[:\t \u00a0]+([^\n\r]+)/i },
+    { key: "Quality", re: /Qualit[y]?[:\t \u00a0]+([^\n\r]+)/i },
+    { key: "IMDb", re: /IMDb[:\t \u00a0]+([^\n\r]+)/i },
+    { key: "Language", re: /Language[:\t \u00a0]+([^\n\r]+)/i },
+    { key: "Genres", re: /(?:All\s+)?Genres?[:\t \u00a0]+([^\n\r]+)/i },
+    { key: "Audio", re: /Audio[:\t \u00a0]+([^\n\r]+)/i },
+    { key: "Format", re: /Format[:\t \u00a0]+([^\n\r]+)/i },
+    {
+      key: "Plot",
+      re: /(?:Plot|Story[ \t-]*line|Story|Synopsis)[:\t \u00a0]+([^\n\r]+)/i,
+    },
   ];
 
   // Hoisted regex constants for parseTitle — avoids recompilation on every call
@@ -608,99 +721,11 @@
       const center = el("div", { className: "dm-navbar__center" });
       const navList = el("ul", { className: "dm-navbar__links" });
 
-      // Define groups and subcategories
-      const groups = [
-        {
-          name: "South Cinema",
-          items: [
-            {
-              text: "South Movies - Hindi",
-              slug: "south-movies-hindi",
-              regex: /south.*hindi/i,
-            },
-          ],
-        },
-        {
-          name: "Bollywood & Regional",
-          items: [
-            {
-              text: "Bollywood Movies",
-              slug: "bollywood-movies",
-              regex: /bollywood/i,
-            },
-            {
-              text: "Punjabi Movies",
-              slug: "punjabi-movies",
-              regex: /punjabi/i,
-            },
-            {
-              text: "Gujarati Movies",
-              slug: "gujarati-movies",
-              regex: /gujarati/i,
-            },
-            {
-              text: "Bhojpuri Movies",
-              slug: "bhojpuri-movies",
-              regex: /bhojpuri/i,
-            },
-          ],
-        },
-        {
-          name: "Hollywood & Foreign",
-          items: [
-            {
-              text: "Hollywood Movies - Hindi",
-              slug: "hollywood-movies-hindi",
-              regex: /hollywood.*hindi/i,
-            },
-            {
-              text: "Hollywood Movies - English",
-              slug: "hollywood-movies-english",
-              regex: /hollywood.*(english|eng)/i,
-            },
-            {
-              text: "Korean Movie - Hindi",
-              slug: "korean-movies-hindi",
-              regex: /korean.*movie/i,
-            },
-          ],
-        },
-        {
-          name: "TV & Web Series",
-          items: [
-            {
-              text: "Web Series",
-              slug: "web-series",
-              regex: /^\s*web\s*series/i,
-            },
-            {
-              text: "TV Show",
-              slug: "tv-shows",
-              regex: /^\s*tv\s*shows?/i,
-            },
-            {
-              text: "Korean Show - Hindi",
-              slug: "korean-shows-hindi",
-              regex: /korean.*show/i,
-            },
-            {
-              text: "English TV Show - Hindi",
-              slug: "english-tv-shows-hindi",
-              regex: /english.*(tv|show).*hindi/i,
-            },
-          ],
-        },
-        {
-          name: "Classics",
-          items: [
-            {
-              text: "Old is Gold Movies",
-              slug: "old-is-gold-movies",
-              regex: /old.*gold/i,
-            },
-          ],
-        },
-      ];
+      // Map NAVBAR_GROUPS to a local groups copy and shallow copy items to avoid mutating the global constant state
+      const groups = NAVBAR_GROUPS.map(g => ({
+        name: g.name,
+        items: g.items.map(i => ({ ...i }))
+      }));
 
       const usedLinks = new Set();
       // Single pass mapping navLinks to groups to match slugs and track used categories
@@ -1061,21 +1086,7 @@
       const releaseInfo = [];
       if (contentEl) {
         const allText = contentEl.innerText || contentEl.textContent || "";
-        const patterns = [
-          { key: "Title", re: /Title[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Year", re: /Year[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Quality", re: /Qualit[y]?[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "IMDb", re: /IMDb[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Language", re: /Language[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Genres", re: /(?:All\s+)?Genres?[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Audio", re: /Audio[:\t \u00a0]+([^\n\r]+)/i },
-          { key: "Format", re: /Format[:\t \u00a0]+([^\n\r]+)/i },
-          {
-            key: "Plot",
-            re: /(?:Plot|Story[ \t-]*line|Story|Synopsis)[:\t \u00a0]+([^\n\r]+)/i,
-          },
-        ];
-        for (const { key, re } of patterns) {
+        for (const { key, re } of RELEASE_INFO_PATTERNS) {
           const m = allText.match(re);
           if (m)
             releaseInfo.push({ key, value: m[1].trim().replace(/\s+/g, " ") });
@@ -1613,42 +1624,48 @@
 
           const jsonpText = suggestRes?.text;
           if (jsonpText) {
-            const jsonpMatch = jsonpText.match(/^[^(]+\((.+)\)$/s);
-            if (jsonpMatch) {
-              const suggestData = JSON.parse(jsonpMatch[1]);
-              if (suggestData?.d?.length > 0) {
-                const queryTitleLower = trimmedTitle.toLowerCase();
+            let suggestData = null;
+            const startIdx = jsonpText.indexOf("(");
+            const endIdx = jsonpText.lastIndexOf(")");
+            if (startIdx !== -1 && endIdx !== -1) {
+              try {
+                suggestData = JSON.parse(jsonpText.slice(startIdx + 1, endIdx));
+              } catch (e) {
+                console.warn("[DM Reimagined] JSONP parse failed", e);
+              }
+            }
+            if (suggestData?.d?.length > 0) {
+              const queryTitleLower = trimmedTitle.toLowerCase();
 
-                let best = suggestData.d.find(
+              let best = suggestData.d.find(
+                (item) =>
+                  item.id &&
+                  item.id.startsWith("tt") &&
+                  item.l &&
+                  item.l.toLowerCase() === queryTitleLower &&
+                  (!targetYear ||
+                    !item.y ||
+                    Math.abs(item.y - targetYear) <= 1),
+              );
+              if (!best)
+                best = suggestData.d.find(
                   (item) =>
                     item.id &&
                     item.id.startsWith("tt") &&
                     item.l &&
-                    item.l.toLowerCase() === queryTitleLower &&
-                    (!targetYear ||
-                      !item.y ||
-                      Math.abs(item.y - targetYear) <= 1),
+                    item.l.toLowerCase() === queryTitleLower,
                 );
-                if (!best)
-                  best = suggestData.d.find(
-                    (item) =>
-                      item.id &&
-                      item.id.startsWith("tt") &&
-                      item.l &&
-                      item.l.toLowerCase() === queryTitleLower,
-                  );
-                if (!best)
-                  best = suggestData.d.find(
-                    (item) =>
-                      item.id &&
-                      item.id.startsWith("tt") &&
-                      (item.qid === "movie" ||
-                        item.qid === "tvSeries" ||
-                        item.qid === "tvMiniSeries"),
-                  );
+              if (!best)
+                best = suggestData.d.find(
+                  (item) =>
+                    item.id &&
+                    item.id.startsWith("tt") &&
+                    (item.qid === "movie" ||
+                      item.qid === "tvSeries" ||
+                      item.qid === "tvMiniSeries"),
+                );
 
-                if (best) imdbId = best.id;
-              }
+              if (best) imdbId = best.id;
             }
 
             if (imdbId) {
@@ -1656,13 +1673,46 @@
               const ratingsRes = await bgFetch(ratingsUrl);
               const html = ratingsRes?.text;
               if (html) {
-                const ratingMatch = html.match(/"aggregateRating"\s*:\s*\{[^}]*"ratingValue"\s*:\s*"?([\d.]+)"?/);
-                if (ratingMatch) {
-                  imdbRating = `${parseFloat(ratingMatch[1]).toFixed(1)}/10`;
-                } else {
-                  const fallbackMatch = html.match(/"ratingValue"\s*:\s*"?([\d.]+)"?/);
-                  if (fallbackMatch) {
-                    imdbRating = `${parseFloat(fallbackMatch[1]).toFixed(1)}/10`;
+                // Method A: JSON-LD script blocks
+                const ldMatches = [...html.matchAll(/<script\s+type=["']application\/ld\+json["']\s*>([\s\S]*?)<\/script>/gi)];
+                for (const match of ldMatches) {
+                  try {
+                    const parsed = JSON.parse(match[1]);
+                    const items = Array.isArray(parsed) ? parsed : [parsed];
+                    for (const item of items) {
+                      const subItems = item["@graph"] ? item["@graph"] : [item];
+                      for (const sub of subItems) {
+                        if (sub.aggregateRating?.ratingValue) {
+                          imdbRating = `${parseFloat(sub.aggregateRating.ratingValue).toFixed(1)}/10`;
+                          break;
+                        }
+                      }
+                      if (imdbRating) break;
+                    }
+                  } catch (e) {}
+                  if (imdbRating) break;
+                }
+
+                // Fallback B: DOMParser parsing test-id aggregate rating score
+                if (!imdbRating) {
+                  try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, "text/html");
+                    const ratingValEl = doc.querySelector('[data-testid="hero-rating-bar__aggregate-rating__score"] span');
+                    if (ratingValEl) {
+                      const scoreText = ratingValEl.textContent.trim();
+                      if (scoreText) {
+                        imdbRating = `${scoreText}/10`;
+                      }
+                    }
+                  } catch (e) {}
+                }
+
+                // Fallback C: Raw regex ratingValue match
+                if (!imdbRating) {
+                  const ratingMatch = html.match(/"ratingValue"\s*:\s*"?([\d.]+)"?/);
+                  if (ratingMatch) {
+                    imdbRating = `${parseFloat(ratingMatch[1]).toFixed(1)}/10`;
                   }
                 }
               }
@@ -1670,7 +1720,7 @@
           }
 
           if (imdbId && imdbRating) {
-            chrome.storage.local.set({
+            await chrome.storage.local.set({
               [cacheKey]: { rating: imdbRating, id: imdbId, timestamp: Date.now() }
             });
           }
@@ -1771,6 +1821,22 @@
     });
   }
 
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      clearTimeout(id);
+      throw error;
+    }
+  }
+
   function initLoadMore() {
     const btn = document.querySelector("#dm-load-more");
     if (!btn) return;
@@ -1784,7 +1850,7 @@
       btn.querySelector(".dm-load-more__text").textContent = "Loading…";
 
       try {
-        const res = await fetch(nextHref, { credentials: "same-origin" });
+        const res = await fetchWithTimeout(nextHref, { credentials: "same-origin" }, 10000);
         if (!res.ok) throw new Error("Network error");
         const html = await res.text();
 

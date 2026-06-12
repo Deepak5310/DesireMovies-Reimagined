@@ -4,8 +4,12 @@
 (function () {
   "use strict";
 
+  const INSTANT_DL_RE = /instant\s*dl/i;
+
   let done = false;
   let cachedButton = null;
+  let safetyTimeoutId = null;
+  let observer = null;
 
   function tryClickInstantDL() {
     if (done) return true;
@@ -13,6 +17,15 @@
     if (cachedButton) {
       done = true;
       cachedButton.click();
+      
+      // Cleanup observer and timeout immediately to prevent memory leak
+      if (observer) {
+        observer.disconnect();
+      }
+      if (safetyTimeoutId) {
+        clearTimeout(safetyTimeoutId);
+      }
+
       setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
       return true;
     }
@@ -23,18 +36,34 @@
     for (const a of anchors) {
       // Check the <b> tag inside the anchor
       const b = a.querySelector("b");
-      if (b && /instant\s*dl/i.test(b.textContent)) {
+      if (b && INSTANT_DL_RE.test(b.textContent)) {
         cachedButton = a;
         done = true;
         a.click();
+        
+        if (observer) {
+          observer.disconnect();
+        }
+        if (safetyTimeoutId) {
+          clearTimeout(safetyTimeoutId);
+        }
+
         setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
         return true;
       }
       // Fallback: full anchor text
-      if (/instant\s*dl/i.test(a.textContent)) {
+      if (INSTANT_DL_RE.test(a.textContent)) {
         cachedButton = a;
         done = true;
         a.click();
+        
+        if (observer) {
+          observer.disconnect();
+        }
+        if (safetyTimeoutId) {
+          clearTimeout(safetyTimeoutId);
+        }
+
         setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
         return true;
       }
@@ -47,14 +76,20 @@
     if (tryClickInstantDL()) return;
 
     // 2. Set up MutationObserver for JS-rendered button
-    const observer = new MutationObserver(() => {
-      if (tryClickInstantDL()) observer.disconnect();
+    observer = new MutationObserver(() => {
+      if (tryClickInstantDL()) {
+        observer.disconnect();
+      }
     });
 
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     // Safety timeout
-    setTimeout(() => observer.disconnect(), 15_000);
+    safetyTimeoutId = setTimeout(() => {
+      if (observer) {
+        observer.disconnect();
+      }
+    }, 15_000);
   }
 
   run();
