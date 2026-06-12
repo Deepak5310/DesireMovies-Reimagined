@@ -224,23 +224,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Dynamic injection of content.js and redesign.css on DesireMovies domains
-chrome.webNavigation.onCommitted.addListener((details) => {
+// Function to dynamically register content script matches for a new hostname
+async function registerMirrorDomain(hostname) {
+  try {
+    const scriptId = "dm-dynamic-script";
+    const pattern = `*://*.${hostname}/*`;
+    
+    const registered = await chrome.scripting.getRegisteredContentScripts();
+    const existing = registered.find(s => s.id === scriptId);
+    
+    if (existing) {
+      if (existing.matches.includes(pattern)) return;
+      
+      const newMatches = [...existing.matches, pattern];
+      await chrome.scripting.updateContentScripts([{
+        id: scriptId,
+        matches: newMatches
+      }]);
+    } else {
+      await chrome.scripting.registerContentScripts([{
+        id: scriptId,
+        matches: [pattern],
+        js: ["content.js"],
+        css: ["redesign.css"],
+        runAt: "document_start",
+        allFrames: false
+      }]);
+    }
+  } catch (err) {
+    console.error("Failed to register dynamic script:", err);
+  }
+}
+
+// Dynamic injection and registration of content.js/redesign.css on DesireMovies domains
+chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId === 0 && details.url) {
     try {
       const url = new URL(details.url);
       if (url.hostname.includes("desiremovies")) {
-        // Inject CSS first
-        chrome.scripting.insertCSS({
-          target: { tabId: details.tabId },
-          files: ["redesign.css"]
-        }).catch(() => {});
+        const hostname = url.hostname;
+        const pattern = `*://*.${hostname}/*`;
+        
+        // Get registered scripts to check if this hostname is already registered
+        const registered = await chrome.scripting.getRegisteredContentScripts();
+        const existing = registered.find(s => s.id === "dm-dynamic-script");
+        const isRegistered = existing && existing.matches.includes(pattern);
+        
+        if (!isRegistered) {
+          // Register so subsequent page loads run at document_start natively
+          await registerMirrorDomain(hostname);
+          
+          // Inject now for the very first load to cover this current page
+          chrome.scripting.insertCSS({
+            target: { tabId: details.tabId },
+            files: ["redesign.css"]
+          }).catch(() => {});
 
-        // Inject Content Script
-        chrome.scripting.executeScript({
-          target: { tabId: details.tabId },
-          files: ["content.js"]
-        }).catch(() => {});
+          chrome.scripting.executeScript({
+            target: { tabId: details.tabId },
+            files: ["content.js"]
+          }).catch(() => {});
+        }
       }
     } catch (e) {
       // Ignore invalid URLs
