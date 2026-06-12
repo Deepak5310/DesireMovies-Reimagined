@@ -4,16 +4,16 @@
   "version": "1.0.0",
   "description": "Transforms DesireMovies into a modern streaming platform UI — Netflix-style grid, clean titles, quality badges, and glassmorphic design.",
   "icons": {
-    "16":  "icons/icon16.png",
-    "32":  "icons/icon32.png",
-    "48":  "icons/icon48.png",
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "action": {
     "default_icon": {
-      "16":  "icons/icon16.png",
-      "32":  "icons/icon32.png",
-      "48":  "icons/icon48.png",
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
     "default_title": "DesireMovies Reimagined"
@@ -21,12 +21,7 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": [
-    "storage",
-    "alarms",
-    "scripting",
-    "webNavigation"
-  ],
+  "permissions": ["storage", "alarms", "scripting", "webNavigation"],
   "host_permissions": [
     "<all_urls>",
     "https://sg.media-imdb.com/*",
@@ -36,33 +31,20 @@
   ],
   "content_scripts": [
     {
-      "matches": [
-        "https://gyanigurus.xyz/*"
-      ],
-      "js": [
-        "shield.js"
-      ],
+      "matches": ["https://gyanigurus.xyz/*"],
+      "js": ["shield.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": [
-        "https://gyanigurus.xyz/*"
-      ],
-      "js": [
-        "gyanigurus.js"
-      ],
+      "matches": ["https://gyanigurus.xyz/*"],
+      "js": ["gyanigurus.js"],
       "run_at": "document_end"
     },
     {
-      "matches": [
-        "https://new.gdflix.io/*"
-      ],
-      "js": [
-        "gdflix.js"
-      ],
+      "matches": ["https://new.gdflix.io/*"],
+      "js": ["gdflix.js"],
       "run_at": "document_end"
     }
-  ],
+  ]
 }
-

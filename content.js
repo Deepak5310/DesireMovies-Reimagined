@@ -1752,11 +1752,25 @@
               }),
             );
           } else if (!imdbRating && (!imdbValEl.textContent.trim() || imdbValEl.textContent.trim() === "N/A" || imdbValEl.textContent.trim() === "__LOADING__")) {
+            if (imdbId) {
+              imdbValEl.innerHTML = "";
+              imdbValEl.appendChild(
+                el("a", {
+                  href: `https://www.imdb.com/title/${imdbId}/`,
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  className: "dm-single__imdb-link",
+                  textContent: "N/A",
+                }),
+              );
+            } else {
+              imdbValEl.textContent = "N/A";
+            }
             const dt = imdbValEl.previousElementSibling;
             if (dt && dt.classList.contains("dm-single__info-key")) {
-              dt.style.display = "none";
+              dt.style.display = "";
             }
-            imdbValEl.style.display = "none";
+            imdbValEl.style.display = "";
           }
         }
       } catch (err) {
