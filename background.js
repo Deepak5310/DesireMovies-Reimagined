@@ -29,18 +29,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 /**
- * Clean up expired IMDb ratings from chrome.storage.local (older than 7 days)
+ * Clean up expired IMDb ratings from chrome.storage.local (older than 1 day)
  */
 function cleanExpiredCache() {
   chrome.storage.local.get(null, (items) => {
     if (chrome.runtime.lastError) return;
     const keysToRemove = [];
     const now = Date.now();
-    const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+    const ONE_DAY = 24 * 60 * 60 * 1000;
     
     for (const [key, val] of Object.entries(items)) {
       if (key.startsWith("imdb_") && val && typeof val === "object") {
-        if (!val.timestamp || now - val.timestamp > ONE_WEEK) {
+        if (!val.timestamp || now - val.timestamp > ONE_DAY) {
           keysToRemove.push(key);
         }
       }
