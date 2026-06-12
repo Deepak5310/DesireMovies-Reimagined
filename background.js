@@ -223,3 +223,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
   }
 });
+
+// Dynamic injection of content.js and redesign.css on DesireMovies domains
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId === 0 && details.url) {
+    try {
+      const url = new URL(details.url);
+      if (url.hostname.includes("desiremovies")) {
+        // Inject CSS first
+        chrome.scripting.insertCSS({
+          target: { tabId: details.tabId },
+          files: ["redesign.css"]
+        }).catch(() => {});
+
+        // Inject Content Script
+        chrome.scripting.executeScript({
+          target: { tabId: details.tabId },
+          files: ["content.js"]
+        }).catch(() => {});
+      }
+    } catch (e) {
+      // Ignore invalid URLs
+    }
+  }
+});

@@ -9,6 +9,10 @@
 (async function () {
   "use strict";
 
+  // Double injection guard
+  if (window.hasDMReimaginedInjected) return;
+  window.hasDMReimaginedInjected = true;
+
   // Set the active class on HTML tag immediately to hide original theme layout elements
   document.documentElement.classList.add("dm-extension-active");
 

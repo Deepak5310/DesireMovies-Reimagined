@@ -23,29 +23,18 @@
   },
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "scripting",
+    "webNavigation"
   ],
   "host_permissions": [
-    "https://1desiremovies.top/*",
+    "<all_urls>",
     "https://sg.media-imdb.com/*",
     "https://www.imdb.com/*",
     "https://gyanigurus.xyz/*",
     "https://new.gdflix.io/*"
   ],
   "content_scripts": [
-    {
-      "matches": [
-        "https://1desiremovies.top/*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "css": [
-        "redesign.css"
-      ],
-      "run_at": "document_start",
-      "all_frames": false
-    },
     {
       "matches": [
         "https://gyanigurus.xyz/*"
@@ -78,7 +67,7 @@
   "web_accessible_resources": [
     {
       "resources": ["redesign.css"],
-      "matches": ["https://1desiremovies.top/*"]
+      "matches": ["<all_urls>"]
     }
   ]
 }
