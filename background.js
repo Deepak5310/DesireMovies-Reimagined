@@ -60,12 +60,10 @@ async function updateSessionStorage() {
   }
 }
 
-// Alarm registration for periodic cache cleanup
+// Alarm registration for periodic cache cleanup (every 2 hours)
 chrome.runtime.onInstalled.addListener(async () => {
-  const alarm = await chrome.alarms.get("cleanup_cache");
-  if (!alarm) {
-    chrome.alarms.create("cleanup_cache", { periodInMinutes: 24 * 60 });
-  }
+  await chrome.alarms.clear("cleanup_cache");
+  chrome.alarms.create("cleanup_cache", { periodInMinutes: 2 * 60 });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -75,18 +73,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 /**
- * Clean up expired IMDb ratings from chrome.storage.local (older than 1 day)
+ * Clean up expired IMDb ratings from chrome.storage.local (older than 2 hours)
  */
 async function cleanExpiredCache() {
   try {
     const items = await chrome.storage.local.get(null);
     const keysToRemove = [];
     const now = Date.now();
-    const ONE_DAY = 24 * 60 * 60 * 1000;
+    const TWO_HOURS = 2 * 60 * 60 * 1000;
     
     for (const [key, val] of Object.entries(items)) {
       if (key.startsWith("imdb_") && val && typeof val === "object") {
-        if (!val.timestamp || now - val.timestamp > ONE_DAY) {
+        if (!val.timestamp || now - val.timestamp > TWO_HOURS) {
           keysToRemove.push(key);
         }
       }
