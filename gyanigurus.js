@@ -40,6 +40,7 @@
     const a = document.querySelector('a[href*="gdflix"]');
     if (a) {
       done = true;
+      a.target = "_self"; // Force same tab navigation
       a.click();
       
       // Cleanup observer and timeout immediately to prevent memory leak
@@ -50,8 +51,8 @@
         clearTimeout(safetyTimeoutId);
       }
       
-      // Close this gyanigurus tab after gdflix opens (reduced delay for performance)
-      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
+      // 10s fallback close if same-tab navigation fails to unload
+      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 10000);
       return true;
     }
     return false;

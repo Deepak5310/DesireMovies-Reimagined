@@ -393,6 +393,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { action, payload = {} } = message;
 
   switch (action) {
+    case "open_background_tab":
+      if (payload.url) {
+        chrome.tabs.create({ url: payload.url, active: false });
+      }
+      sendResponse({ success: true });
+      return false;
+
     case "close_tab":
       if (sender.tab?.id) {
         const tabId = sender.tab.id;

@@ -1442,13 +1442,13 @@
               const response = await sendBgMessage("bypass_gyanigurus", { url: href });
 
               if (response && response.success && response.gdflixUrl) {
-                window.open(response.gdflixUrl, "_blank");
+                sendBgMessage("open_background_tab", { url: response.gdflixUrl });
               } else {
-                window.open(href, "_blank");
+                sendBgMessage("open_background_tab", { url: href });
               }
             } catch (err) {
               console.warn("[DM Reimagined] Bypass failed, falling back:", err);
-              window.open(href, "_blank");
+              sendBgMessage("open_background_tab", { url: href });
             } finally {
               a.innerHTML = originalHTML;
               a.style.pointerEvents = "";

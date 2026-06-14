@@ -16,6 +16,7 @@
 
     if (cachedButton) {
       done = true;
+      cachedButton.target = "_self"; // Force same tab navigation
       cachedButton.click();
       
       // Cleanup observer and timeout immediately to prevent memory leak
@@ -26,7 +27,8 @@
         clearTimeout(safetyTimeoutId);
       }
 
-      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
+      // 10s fallback close if same-tab navigation fails to unload
+      setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 10000);
       return true;
     }
 
@@ -39,6 +41,7 @@
       if (b && INSTANT_DL_RE.test(b.textContent)) {
         cachedButton = a;
         done = true;
+        a.target = "_self"; // Force same tab navigation
         a.click();
         
         if (observer) {
@@ -48,13 +51,15 @@
           clearTimeout(safetyTimeoutId);
         }
 
-        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
+        // 10s fallback close if same-tab navigation fails to unload
+        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 10000);
         return true;
       }
       // Fallback: full anchor text
       if (INSTANT_DL_RE.test(a.textContent)) {
         cachedButton = a;
         done = true;
+        a.target = "_self"; // Force same tab navigation
         a.click();
         
         if (observer) {
@@ -64,7 +69,8 @@
           clearTimeout(safetyTimeoutId);
         }
 
-        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 200);
+        // 10s fallback close if same-tab navigation fails to unload
+        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 10000);
         return true;
       }
     }
