@@ -311,6 +311,8 @@ html.dm-extension-active body #dm-app .dm-single-main,
   contain: layout style paint;
   content-visibility: auto;
   contain-intrinsic-size: auto 340px;
+  display: flex;
+  flex-direction: column;
 }
 .dm-card:hover {
   transform: translateY(-4px);
@@ -365,22 +367,30 @@ html.dm-extension-active body #dm-app .dm-single-main,
 }
 
 /* Card info — clean, spacious */
-.dm-card__info { padding: 10px 12px 13px; }
+.dm-card__info {
+  padding: 8px 10px 9px;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
 .dm-card__title {
-  margin: 0 0 5px;
-  font-size: 13px; font-weight: 600; line-height: 1.3;
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  height: 18px; /* Fixed height for exactly 1 line of text to align all cards in the grid */
 }
 .dm-card__title-link {
   color: var(--dm-text);
   display: -webkit-box; -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
   overflow: hidden;
   transition: color var(--dm-fast);
 }
 .dm-card__title-link:hover { color: var(--dm-accent); }
 
-.dm-card__meta { display: flex; align-items: center; gap: 5px; margin-bottom: 7px; }
+.dm-card__meta { display: flex; align-items: center; gap: 5px; margin-bottom: 0; }
 .dm-card__year, .dm-card__season, .dm-card__cat {
   font-size: 11px; color: var(--dm-text-muted); font-weight: 400;
 }
