@@ -349,12 +349,12 @@
       const year = yearMatch ? yearMatch[1] : "";
       if (yearMatch) working = working.replace(yearMatch[0], "").trim();
 
-      const seasonMatch = working.match(/\[?(Season\s*\d+|S\d{1,2})\]?/i);
+      const seasonMatch = working.match(/(?<![a-zA-Z0-9])\[?(Season\s*\d+|S\d{1,2})(?=[^a-zA-Z0-9]|$|e\d|ep\d)\]?/i);
       const season = seasonMatch ? seasonMatch[1] : "";
       if (seasonMatch) working = working.replace(seasonMatch[0], "").trim();
 
       const epMatch = working.match(
-        /\[?(Episode\s*\d+[\s\d\-]*(?:Added)?|EP?\s*\d+[\s\d\-]*(?:ADDED)?)\]?/i,
+        /(?<![a-zA-Z0-9])\[?(Episode\s*\d+(?:\s*-\s*\d+)?\s*(?:Added)?|EP?\s*\d+(?:\s*-\s*\d+)?\s*(?:ADDED)?)\]?(?![a-zA-Z0-9])/i,
       );
       const episode = epMatch ? epMatch[1] : "";
       if (epMatch) working = working.replace(epMatch[0], "").trim();
