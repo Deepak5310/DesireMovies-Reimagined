@@ -34,7 +34,7 @@ A modern Chrome Extension that completely transforms the DesireMovies browsing e
 * One-click download experience
 * Background headless redirection engine
 * Automatic form submission
-* Popup suppression
+* Popup blocking (via `window.open` override in MAIN world where needed)
 * Cloudflare-safe fallback workflow
 * Automatic GDFlix navigation
 * Auto-click Instant Download buttons
@@ -74,17 +74,15 @@ graph TD
     G -->|Yes| H[Open GDFlix]
     G -->|No| I[Fallback Automation]
 
-    I --> J[shield.js]
-    I --> K[gyanigurus.js]
+    I --> J[automation.js — Gyanigurus]
+    J --> K[Detect GDFlix Link]
+    K --> H
 
-    K --> L[Detect GDFlix Link]
-    L --> H
+    H --> L[automation.js — GDFlix]
+    L --> M[Instant Download]
 
-    H --> M[gdflix.js]
-    M --> N[Instant Download]
-
-    N --> O[fastcdn.js]
-    O --> P[Auto Click & Close]
+    M --> N[automation.js — FastCDN]
+    N --> O[Auto Click & Close]
 ```
 
 ---
@@ -150,14 +148,11 @@ If headless bypass fails:
 
 ## 📋 Script Execution Matrix
 
-| Script          | Target         | Timing           | Context        | Purpose                                 |
-| --------------- | -------------- | ---------------- | -------------- | --------------------------------------- |
-| `content.js`    | DesireMovies   | `document_start` | ISOLATED       | UI rendering, IMDb integration, caching |
-| `shield.js`     | GyaniGurus     | `document_start` | MAIN           | Popup suppression                       |
-| `gyanigurus.js` | GyaniGurus     | `document_end`   | ISOLATED       | Redirect automation                     |
-| `gdflix.js`     | GDFlix         | `document_end`   | ISOLATED       | Instant download automation             |
-| `fastcdn.js`    | FastCDN        | `document_end`   | ISOLATED       | Final download automation & auto-close  |
-| `background.js` | Service Worker | N/A              | Service Worker | Headless bypass, dynamic injection & renaming |
+| Script          | Target                              | Timing           | Context        | Purpose                                          |
+| --------------- | ----------------------------------- | ---------------- | -------------- | ------------------------------------------------ |
+| `content.js`    | DesireMovies                        | `document_start` | ISOLATED       | UI rendering, IMDb integration, caching          |
+| `automation.js` | GyaniGurus, GDFlix, FastCDN         | `document_start` | ISOLATED       | Redirect automation, auto-click & tab close      |
+| `background.js` | Service Worker                      | N/A              | Service Worker | Headless bypass, dynamic injection & renaming    |
 
 ---
 
@@ -169,10 +164,7 @@ DesireMovies-Reimagined/
 ├── manifest.json
 ├── background.js
 ├── content.js
-├── shield.js
-├── gyanigurus.js
-├── gdflix.js
-├── fastcdn.js
+├── automation.js
 ├── redesign.css
 │
 ├── docs/
