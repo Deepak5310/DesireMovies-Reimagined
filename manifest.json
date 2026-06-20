@@ -33,8 +33,7 @@
         "https://fastcdn-dl.pages.dev/*"
       ],
       "js": ["automation.js"],
-      "run_at": "document_start",
-      "world": "MAIN"
+      "run_at": "document_start"
     }
   ]
 }

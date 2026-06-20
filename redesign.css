@@ -788,13 +788,13 @@ html.dm-extension-active body #dm-app .dm-single-main,
 }
 @media (max-width: 768px) {
   .dm-grid { grid-template-columns: repeat(3, 1fr); }
-  
+
   /* Navbar compact spacing */
   .dm-navbar { padding: 0 12px; gap: 8px; }
   .dm-navbar__left::after { display: none; }
   .dm-navbar__links { gap: 1px; }
   .dm-navbar__link { padding: 4px 8px; font-size: 12px; }
-  
+
   /* Single details page mobile stacking */
   .dm-single__hero {
     flex-direction: column;

@@ -82,7 +82,7 @@ async function cleanExpiredCache() {
     const keysToRemove = [];
     const now = Date.now();
     const TWO_HOURS = 2 * 60 * 60 * 1000;
-    
+
     for (const [key, val] of Object.entries(items)) {
       if (key.startsWith("imdb_") && val && typeof val === "object") {
         if (!val.timestamp || now - val.timestamp > TWO_HOURS) {
@@ -157,7 +157,7 @@ async function getImdbRating(title, year) {
   if (!trimmedTitle) return { rating: "N/A", id: null };
 
   const cacheKey = `imdb_${trimmedTitle.toLowerCase()}`;
-  
+
   // 1. Check local cache first
   try {
     const result = await chrome.storage.local.get(cacheKey);
@@ -176,7 +176,7 @@ async function getImdbRating(title, year) {
     const suggestUrl = `https://sg.media-imdb.com/suggests/${firstChar}/${encodeURIComponent(trimmedTitle.toLowerCase())}.json`;
     const suggestRes = await fetchWithTimeout(suggestUrl);
     const jsonpText = await suggestRes.text();
-    
+
     if (jsonpText) {
       let suggestData = null;
       const startIdx = jsonpText.indexOf("(");
@@ -188,11 +188,11 @@ async function getImdbRating(title, year) {
           console.warn("[DM Reimagined] JSONP parse failed:", e);
         }
       }
-      
+
       if (suggestData?.d?.length > 0) {
         const queryTitleNormalized = normalizeString(trimmedTitle);
         const targetYear = year ? parseInt(year) : null;
-        
+
         // A. Match exactly (normalized) and within 1 year
         let best = suggestData.d.find(
           (item) =>
@@ -202,7 +202,7 @@ async function getImdbRating(title, year) {
             normalizeString(item.l) === queryTitleNormalized &&
             (!targetYear || !item.y || Math.abs(item.y - targetYear) <= 1)
         );
-        
+
         // B. Match exactly (normalized) regardless of year
         if (!best) {
           best = suggestData.d.find(
@@ -213,7 +213,7 @@ async function getImdbRating(title, year) {
               normalizeString(item.l) === queryTitleNormalized
           );
         }
-        
+
         // C. Fallback: match by title contains and is a film/tv show
         if (!best) {
           best = suggestData.d.find(
@@ -225,7 +225,7 @@ async function getImdbRating(title, year) {
                 item.qid === "tvMiniSeries")
           );
         }
-        
+
         if (best) imdbId = best.id;
       }
     }
@@ -240,7 +240,7 @@ async function getImdbRating(title, year) {
       const ratingsUrl = `https://www.imdb.com/title/${imdbId}/`;
       const ratingsRes = await fetchWithTimeout(ratingsUrl);
       const html = await ratingsRes.text();
-      
+
       if (html) {
         // Method A: JSON-LD script blocks
         const ldMatches = [...html.matchAll(/<script\s+type=["']application\/ld\+json["']\s*>([\s\S]*?)<\/script>/gi)];
@@ -258,7 +258,7 @@ async function getImdbRating(title, year) {
               }
               if (imdbRating) break;
             }
-          } catch (e) {}
+          } catch (e) { }
           if (imdbRating) break;
         }
 
@@ -294,7 +294,7 @@ async function getImdbRating(title, year) {
     }
     return { rating: imdbRating, id: imdbId };
   }
-  
+
   return { rating: "N/A", id: imdbId };
 }
 
@@ -318,7 +318,7 @@ function parseAttributes(tagString) {
  */
 async function performBypass(url) {
   await ensureInitialized();
-  
+
   // Check session cache first
   if (bypassCache.has(url)) {
     return { success: true, gdflixUrl: bypassCache.get(url) };
@@ -351,7 +351,7 @@ async function performBypass(url) {
   const inputRegex = /<input[^>]*>/gi;
   const tags = html1.match(inputRegex) || [];
   const formData = new URLSearchParams();
-  
+
   for (const tag of tags) {
     const attrs = parseAttributes(tag);
     if (attrs.type === "hidden" && attrs.name) {
@@ -380,7 +380,7 @@ async function performBypass(url) {
     await updateSessionStorage();
     return { success: true, gdflixUrl: gdflixMatch[1] };
   }
-  
+
   throw new Error("gdflix link not found in POST response");
 }
 
@@ -406,7 +406,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tabId = sender.tab.id;
         chrome.tabs.get(tabId, (tab) => {
           if (chrome.runtime.lastError || !tab) return;
-          chrome.tabs.remove(tabId).catch(() => {});
+          chrome.tabs.remove(tabId).catch(() => { });
         });
       }
       return false;
@@ -438,7 +438,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!bypassPromise) {
           bypassPromise = performBypass(url);
           activeBypasses.set(url, bypassPromise);
-          
+
           // Clean up map once resolved/rejected
           bypassPromise.finally(() => {
             activeBypasses.delete(url);
@@ -452,12 +452,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Fallback intelligence tracking
           const currentFailures = (failureCounters.get(domain) || 0) + 1;
           failureCounters.set(domain, currentFailures);
-          
+
           if (currentFailures >= 2) {
             fallbackDomains.add(domain);
           }
           await updateSessionStorage();
-          
+
           sendResponse({ success: false, error: err.message });
         }
       })();
@@ -468,7 +468,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           const cacheKey = `imdb_${payload.title.trim().toLowerCase()}`;
           let fetchPromise = activeImdbFetches.get(cacheKey);
-          
+
           if (!fetchPromise) {
             fetchPromise = getImdbRating(payload.title, payload.year);
             activeImdbFetches.set(cacheKey, fetchPromise);
@@ -476,7 +476,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               activeImdbFetches.delete(cacheKey);
             });
           }
-          
+
           const result = await fetchPromise;
           sendResponse({ success: true, ...result });
         } catch (err) {
@@ -495,13 +495,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 function getBaseDesireMoviesDomain(hostname) {
   const parts = hostname.split(".");
   if (parts.length < 2) return hostname;
-  
+
   // Verify second-to-last part to ensure desiremovies is the SLD (or SLD on multi-part TLD)
   const sld = parts[parts.length - 2];
   if (sld.includes("desiremovies")) {
     return parts.slice(-2).join(".");
   }
-  
+
   if (parts.length >= 3) {
     const sld2 = parts[parts.length - 3];
     if (sld2.includes("desiremovies")) {
@@ -521,16 +521,16 @@ async function registerMirrorDomain(hostname) {
 
     const scriptId = "dm-dynamic-script";
     const pattern = `*://*.${baseDomain}/*`;
-    
+
     const registered = await chrome.scripting.getRegisteredContentScripts();
     const existing = registered.find(s => s.id === scriptId);
-    
+
     if (existing) {
       if (existing.matches.includes(pattern)) {
         registeredMirrors.add(baseDomain);
         return;
       }
-      
+
       const newMatches = [...existing.matches, pattern];
       await chrome.scripting.updateContentScripts([{
         id: scriptId,
@@ -562,30 +562,30 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
       if (!baseDomain) return;
 
       if (registeredMirrors.has(baseDomain)) return;
-      
+
       const pattern = `*://*.${baseDomain}/*`;
-      
+
       // Get registered scripts to check if this hostname is already registered
       const registered = await chrome.scripting.getRegisteredContentScripts();
       const existing = registered.find(s => s.id === "dm-dynamic-script");
       const isRegistered = existing && existing.matches.includes(pattern);
-      
+
       if (isRegistered) {
         registeredMirrors.add(baseDomain);
       } else {
         // Register so subsequent page loads run at document_start natively
         await registerMirrorDomain(url.hostname);
-        
+
         // Inject now for the very first load to cover this current page
         chrome.scripting.insertCSS({
           target: { tabId: details.tabId },
           files: ["redesign.css"]
-        }).catch(() => {});
+        }).catch(() => { });
 
         chrome.scripting.executeScript({
           target: { tabId: details.tabId },
           files: ["content.js"]
-        }).catch(() => {});
+        }).catch(() => { });
       }
     } catch (e) {
       // Ignore invalid URLs
@@ -601,15 +601,15 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
 function cleanFilename(filename) {
   const lastDotIdx = filename.lastIndexOf(".");
   if (lastDotIdx === -1) return filename;
-  
+
   let baseName = filename.slice(0, lastDotIdx);
   const ext = filename.slice(lastDotIdx);
-  
+
   // Strip browser-added duplicate suffix (e.g. " (1)")
   baseName = baseName.replace(/\s*\(\d+\)$/, "");
-  
+
   let ep = "";
-  
+
   // 1. Parse TV show episode numbers/ranges (e.g. EP.1.5. or EP.01.)
   const epMatch = baseName.match(/^EP((\.\d+)+)\./i);
   if (epMatch) {
@@ -618,7 +618,7 @@ function cleanFilename(filename) {
       const first = numbers[0];
       const last = numbers[numbers.length - 1];
       const pad = (num) => String(num).padStart(2, "0");
-      
+
       if (first === last) {
         ep = `EP${pad(first)}`;
       } else {
@@ -627,21 +627,21 @@ function cleanFilename(filename) {
     }
     baseName = baseName.replace(/^EP(\.\d+)+\./i, "");
   }
-  
+
   // 2. Remove tags and DesireMovies branding (including any mirror domain suffix) safely using word boundaries
   baseName = baseName
     .replace(/\bdesiremovies(?:[\.\- ]+[a-z0-9\-]+)*\b/gi, "")
     .replace(/\b10bits?\b/gi, "")
     .replace(/\b(hevc|hq|hd)\b/gi, "");
-    
+
   // 3. Capitalize WEB-DL
   baseName = baseName.replace(/\bwebdl\b/gi, "WEB-DL");
-  
+
   // 4. Inject EP information after Sxx if present
   if (ep) {
     baseName = baseName.replace(/\b(S\d{2})\b/gi, `$1 ${ep}`);
   }
-  
+
   // 5. Clean up multiple spaces, convert dots to spaces, and capitalize the first letter of each word to Title Case
   const cleanName = baseName
     .replace(/\./g, " ")
@@ -651,7 +651,7 @@ function cleanFilename(filename) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
-  
+
   return cleanName + ext;
 }
 

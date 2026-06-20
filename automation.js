@@ -28,12 +28,6 @@
 
   // --- Gyanigurus Logic ---
   if (host.includes("gyanigurus.xyz")) {
-    // Blocks window.open popups
-    if (window.open && !window.open.isShielded) {
-      window.open = function () { return null; };
-      window.open.isShielded = true;
-    }
-
     const BUTTON_TEXT_RE = /click\s*here|open\s*link/i;
     let openBtnClicked = false;
 
@@ -77,7 +71,7 @@
       observer.observe(document.documentElement, { childList: true, subtree: true });
       safetyTimeoutId = setTimeout(cleanup, 15000);
     }
-    
+
     // Only run if it's the top window, or run anyway as before.
     runGyanigurus();
   }
@@ -121,7 +115,7 @@
       observer.observe(document.documentElement, { childList: true, subtree: true });
       safetyTimeoutId = setTimeout(cleanup, 15000);
     }
-    
+
     runGdflix();
   }
 
