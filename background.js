@@ -162,7 +162,7 @@ async function getImdbRating(title, year) {
   try {
     const result = await chrome.storage.local.get(cacheKey);
     const cached = result[cacheKey];
-    if (cached?.rating && cached?.id) {
+    if (cached?.rating && cached.rating !== "N/A" && cached?.id) {
       return { rating: cached.rating, id: cached.id };
     }
   } catch (err) {
@@ -238,7 +238,15 @@ async function getImdbRating(title, year) {
   if (imdbId) {
     try {
       const ratingsUrl = `https://www.imdb.com/title/${imdbId}/`;
-      const ratingsRes = await fetchWithTimeout(ratingsUrl);
+      const ratingsRes = await fetchWithTimeout(ratingsUrl, {
+        credentials: "include",
+        headers: {
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Cache-Control": "no-cache",
+          "Upgrade-Insecure-Requests": "1"
+        }
+      });
       const html = await ratingsRes.text();
 
       if (html) {
