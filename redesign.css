@@ -334,6 +334,17 @@ html.dm-extension-active body #dm-app .dm-single-main,
 .dm-card:hover .dm-card__img { transform: scale(1.04); }
 .dm-card__img--error { color: var(--dm-text-muted); font-size: 28px; }
 
+.dm-card__imdb-badge {
+  position: absolute; top: 8px; right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  padding: 4px 6px; border-radius: var(--dm-r-sm);
+  display: flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 700; color: #fff;
+  z-index: 2; border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
 /* Subtle overlay — only title + CTA, no badges */
 .dm-card__overlay {
   position: absolute; inset: 0;
@@ -390,11 +401,13 @@ html.dm-extension-active body #dm-app .dm-single-main,
 }
 .dm-card__title-link:hover { color: var(--dm-accent); }
 
-.dm-card__meta { display: flex; align-items: center; gap: 5px; margin-bottom: 0; }
-.dm-card__year, .dm-card__season, .dm-card__cat {
-  font-size: 11px; color: var(--dm-text-muted); font-weight: 400;
+.dm-card__meta { display: flex; align-items: center; gap: 4px; margin-bottom: 0; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+.dm-card__year, .dm-card__season, .dm-card__cat, .dm-card__lang, .dm-card__imdb {
+  font-size: 11px; color: var(--dm-text-muted); font-weight: 500;
+  display: inline-flex; align-items: center; white-space: nowrap; flex-shrink: 0;
 }
-.dm-card__year::after, .dm-card__season::after { content: '·'; margin-left: 4px; color: var(--dm-text-muted); }
+.dm-card__lang { flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+.dm-card__meta > span:not(:last-child)::after { content: '|'; margin-left: 4px; color: var(--dm-border-md); font-weight: 400; }
 .dm-card__meta > :last-child::after { content: none; }
 
 /* ═══════════════════════════════════════════════════════════

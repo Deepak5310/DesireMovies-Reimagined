@@ -382,6 +382,9 @@
       }
       const audio = [...audioSet];
 
+      const langMatch = rawTitle.match(/\b(Hindi|English|Tamil|Telugu|Malayalam|Kannada|Marathi|Bengali|Punjabi|Gujarati|Bhojpuri|Korean)\b/gi);
+      const cleanLanguage = langMatch ? [...new Set(langMatch.map(l => l.charAt(0).toUpperCase() + l.slice(1).toLowerCase()))].join(" - ") : "";
+
       let cleanTitle = working
         .replace(CLEAN_TITLE_RE, "")
         .replace(/\s{2,}/g, " ")
@@ -403,6 +406,7 @@
         quality,
         codec,
         audio,
+        cleanLanguage,
         type,
         subtitles,
       };
@@ -467,7 +471,7 @@
           const bg = window.getComputedStyle(thumbDiv).backgroundImage;
           const m = bg?.match(/url\(["']?(.+?)["']?\)/);
           if (m) return m[1];
-        } catch (e) {}
+        } catch (e) { }
       }
       return "";
     },
@@ -598,6 +602,21 @@
 
   // ── 3. List Page Renderer ──
   const DMRenderer = {
+    async fetchAndUpdateCardImdbRating(post, imdbBadge) {
+      try {
+        const response = await sendBgMessage("get_imdb_rating", {
+          title: post.cleanTitle,
+          year: post.year || "",
+        });
+        if (response && response.success && response.rating && response.rating !== "N/A") {
+          imdbBadge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="#f5c518" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span>${response.rating}</span>`;
+        } else {
+          imdbBadge.style.display = "none";
+        }
+      } catch (err) {
+        imdbBadge.style.display = "none";
+      }
+    },
     buildCard(post) {
       const card = el("article", { className: "dm-card", "data-id": post.id });
       const link = el("a", {
@@ -623,6 +642,13 @@
       } else {
         imgWrapper.classList.add("dm-card__img--error");
         imgWrapper.appendChild(svgIcon("film"));
+      }
+
+      const imdbBadge = el("div", { className: "dm-card__imdb-badge" });
+      imdbBadge.innerHTML = `<span class="dm-skeleton" style="width:20px;height:8px;border-radius:2px;display:block;"></span>`;
+      imgWrapper.appendChild(imdbBadge);
+      if (post.cleanTitle) {
+        this.fetchAndUpdateCardImdbRating(post, imdbBadge);
       }
 
       const overlay = el("div", { className: "dm-card__overlay" });
@@ -669,6 +695,11 @@
         const seasonSpan = el("span", { className: "dm-card__season" });
         seasonSpan.textContent = post.season;
         meta.appendChild(seasonSpan);
+      }
+      if (post.cleanLanguage) {
+        const langSpan = el("span", { className: "dm-card__lang" });
+        langSpan.textContent = post.cleanLanguage;
+        meta.appendChild(langSpan);
       }
       if (post.category) {
         const catSpan = el("span", { className: "dm-card__cat" });
@@ -1381,28 +1412,28 @@
       const infoItems =
         releaseInfo.length > 0
           ? (() => {
-              const full = releaseInfo.filter(
-                (r) =>
-                  r.key !== "Quality" &&
-                  r.key !== "Source" &&
-                  r.key !== "Format" &&
-                  r.key !== "Plot" &&
-                  r.key !== "Title",
-              );
-              if (parsed.year && !full.find((r) => r.key === "Year"))
-                full.unshift({ key: "Year", value: parsed.year });
-              if (parsed.season)
-                full.push({ key: "Season", value: parsed.season });
-              return full;
-            })()
+            const full = releaseInfo.filter(
+              (r) =>
+                r.key !== "Quality" &&
+                r.key !== "Source" &&
+                r.key !== "Format" &&
+                r.key !== "Plot" &&
+                r.key !== "Title",
+            );
+            if (parsed.year && !full.find((r) => r.key === "Year"))
+              full.unshift({ key: "Year", value: parsed.year });
+            if (parsed.season)
+              full.push({ key: "Season", value: parsed.season });
+            return full;
+          })()
           : [
-              parsed.year && { key: "Year", value: parsed.year },
-              parsed.season && { key: "Season", value: parsed.season },
-              parsed.audio.length && {
-                key: "Audio",
-                value: parsed.audio.slice(0, 2).join(", "),
-              },
-            ].filter(Boolean);
+            parsed.year && { key: "Year", value: parsed.year },
+            parsed.season && { key: "Season", value: parsed.season },
+            parsed.audio.length && {
+              key: "Audio",
+              value: parsed.audio.slice(0, 2).join(", "),
+            },
+          ].filter(Boolean);
 
       if (infoItems.length > 0) {
         metaCol.appendChild(this.buildInfoGrid(infoItems, imdbId));
@@ -1428,7 +1459,7 @@
         groupsWrap.addEventListener("click", async (e) => {
           const a = e.target.closest(".dm-single__dl-btn");
           if (!a) return;
-          
+
           const href = a.getAttribute("href");
           if (href && href.includes("gyanigurus")) {
             e.preventDefault();
@@ -1589,7 +1620,7 @@
       try {
         const queryTitle = data.parsed.cleanTitle;
         const queryYear = data.parsed.year || "";
-        
+
         const response = await sendBgMessage("get_imdb_rating", {
           title: queryTitle,
           year: queryYear,
