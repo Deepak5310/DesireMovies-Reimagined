@@ -304,8 +304,7 @@ html.dm-extension-active body #dm-app .dm-single-main,
   border: 1px solid var(--dm-border);
   transition:
     transform var(--dm-base) var(--dm-ease),
-    border-color var(--dm-base) var(--dm-ease),
-    box-shadow var(--dm-base) var(--dm-ease);
+    border-color var(--dm-base) var(--dm-ease);
   opacity: 0;
   cursor: pointer;
   contain: layout style paint;
@@ -317,7 +316,6 @@ html.dm-extension-active body #dm-app .dm-single-main,
 .dm-card:hover {
   transform: translateY(-4px);
   border-color: var(--dm-border-md);
-  box-shadow: var(--dm-shadow-md), 0 0 0 1px rgba(6,182,212,0.1);
 }
 
 .dm-card__poster-link { display: block; text-decoration: none; position: relative; }

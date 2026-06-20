@@ -449,19 +449,10 @@
     },
 
     extractThumbnail(article) {
-      const imgSelectors = [
-        ".mh-thumb img",
-        ".post-thumb img",
-        ".wp-post-image",
-        "a img",
-        "img",
-      ];
-      for (const sel of imgSelectors) {
-        const img = article.querySelector(sel);
-        if (img) {
-          const src = getImgSrc(img);
-          if (src) return src;
-        }
+      const img = article.querySelector(".mh-thumb img, .post-thumb img, .wp-post-image, a img, img");
+      if (img) {
+        const src = getImgSrc(img);
+        if (src) return src;
       }
       const thumbDiv = article.querySelector(
         ".mh-thumb, .post-thumb, .post-image, figure",
@@ -477,48 +468,18 @@
     },
 
     extractPostLink(article) {
-      const selectors = [
-        "h1.entry-title a",
-        "h2.entry-title a",
-        "h3.entry-title a",
-        ".entry-title a",
-        ".mh-excerpt-block h3 a",
-        'a[rel="bookmark"]',
-      ];
-      for (const sel of selectors) {
-        const href = queryAttr(article, sel, "href");
-        if (href) return href;
-      }
-      return "";
+      const href = queryAttr(article, "h1.entry-title a, h2.entry-title a, h3.entry-title a, .entry-title a, .mh-excerpt-block h3 a, a[rel='bookmark']", "href");
+      return href || "";
     },
 
     extractRawTitle(article) {
-      const selectors = [
-        "h1.entry-title",
-        "h2.entry-title",
-        "h3.entry-title",
-        ".entry-title",
-        ".mh-excerpt-block h3",
-        ".mh-excerpt-block h2",
-      ];
-      for (const sel of selectors) {
-        const val = queryText(article, sel);
-        if (val) return val;
-      }
-      return "";
+      const val = queryText(article, "h1.entry-title, h2.entry-title, h3.entry-title, .entry-title, .mh-excerpt-block h3, .mh-excerpt-block h2");
+      return val || "";
     },
 
     extractCategory(article) {
-      const selectors = [
-        ".entry-category a",
-        ".cat-links a",
-        ".entry-meta .category a",
-        ".post-categories a",
-      ];
-      for (const sel of selectors) {
-        const a = article.querySelector(sel);
-        if (a?.href) return { text: a.textContent.trim(), href: a.href };
-      }
+      const a = article.querySelector(".entry-category a, .cat-links a, .entry-meta .category a, .post-categories a");
+      if (a?.href) return { text: a.textContent.trim(), href: a.href };
       return null;
     },
 

@@ -10,6 +10,7 @@
 
 // Concurrent bypass deduplication map (url -> Promise)
 const activeBypasses = new Map();
+const activeImdbFetches = new Map();
 
 // Session bypass cache copies
 const bypassCache = new Map();
@@ -465,7 +466,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "get_imdb_rating":
       (async () => {
         try {
-          const result = await getImdbRating(payload.title, payload.year);
+          const cacheKey = `imdb_${payload.title.trim().toLowerCase()}`;
+          let fetchPromise = activeImdbFetches.get(cacheKey);
+          
+          if (!fetchPromise) {
+            fetchPromise = getImdbRating(payload.title, payload.year);
+            activeImdbFetches.set(cacheKey, fetchPromise);
+            fetchPromise.finally(() => {
+              activeImdbFetches.delete(cacheKey);
+            });
+          }
+          
+          const result = await fetchPromise;
           sendResponse({ success: true, ...result });
         } catch (err) {
           sendResponse({ success: false, error: err.message });
