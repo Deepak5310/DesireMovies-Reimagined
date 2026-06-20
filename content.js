@@ -102,6 +102,10 @@
 
   function sendBgMessage(action, payload = {}) {
     return new Promise((resolve) => {
+      if (!chrome?.runtime?.id) {
+        resolve({ success: false, error: "Extension context unavailable" });
+        return;
+      }
       chrome.runtime.sendMessage({ action, payload }, (response) => {
         if (chrome.runtime.lastError) {
           resolve({ success: false, error: chrome.runtime.lastError.message });
@@ -275,7 +279,7 @@
   ];
 
   // Single precompiled regex for clean title parsing
-  const CLEAN_TITLE_RE = /\[.*?\]|\(.*?\)|\|.*$|\b(?:4K|2160p|1080p|720p|480p|360p|x265|x264|HEVC|AVC|H\.264|H\.265|WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip|ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|Marathi|Bengali|Punjabi|Kannada|Bhojpuri|Gujarati|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG|REPACK)\b|[\[\](){}|]/gi;
+  const CLEAN_TITLE_RE = /\[.*?\]|\(.*?\)|\|.*$|\b(?:4K|2160p|1080p|720p|480p|360p|x265|x264|HEVC|AVC|H\.264|H\.265|WEB-?HDRip|WEB-?DL|BluRay|Blu-?Ray|HDCAM|CAM|DVDRip|HQ[-\s]?HDTS|HDTS|HDRip|WEBRip|ESubs?|HSubs?|Subs?|Dual\s*Audio|Multi\s*Audio|Hindi\s*ORG|Hindi|Tamil|Telugu|Malayalam|English|Korean|Marathi|Bengali|Punjabi|Kannada|Bhojpuri|Gujarati|DD\s*[\d.]+|DDP\s*[\d.]+|DD5\.1|Atmos|ORG|REPACK|AI|Upscale)\b|[\[\](){}|]/gi;
 
   // Shared helper: compute display title from a post object
   function displayTitle(post) {
