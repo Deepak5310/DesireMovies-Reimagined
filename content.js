@@ -345,7 +345,7 @@
         };
       let working = rawTitle.trim();
 
-      const yearMatch = working.match(/\((\d{4})\)/);
+      const yearMatch = working.match(/\((\d{4})\)/) || working.match(/\b((?:19|20)\d{2})\b/);
       const year = yearMatch ? yearMatch[1] : "";
       if (yearMatch) working = working.replace(yearMatch[0], "").trim();
 

@@ -190,40 +190,34 @@ async function getImdbRating(title, year) {
       }
 
       if (suggestData?.d?.length > 0) {
-        const queryTitleNormalized = normalizeString(trimmedTitle);
+        const queryNorm = normalizeString(trimmedTitle);
         const targetYear = year ? parseInt(year) : null;
 
-        // A. Match exactly (normalized) and within 1 year
-        let best = suggestData.d.find(
-          (item) =>
-            item.id &&
-            item.id.startsWith("tt") &&
-            item.l &&
-            normalizeString(item.l) === queryTitleNormalized &&
-            (!targetYear || !item.y || Math.abs(item.y - targetYear) <= 1)
-        );
+        const isTT    = (i) => i.id?.startsWith("tt") && i.l;
+        const normL   = (i) => normalizeString(i.l);
+        const yearOk  = (i, d) => !targetYear || !i.y || Math.abs(i.y - targetYear) <= d;
+        const isMedia = (i) => i.qid === "movie" || i.qid === "tvSeries" || i.qid === "tvMiniSeries";
 
-        // B. Match exactly (normalized) regardless of year
-        if (!best) {
-          best = suggestData.d.find(
-            (item) =>
-              item.id &&
-              item.id.startsWith("tt") &&
-              item.l &&
-              normalizeString(item.l) === queryTitleNormalized
-          );
-        }
+        // Cascading strategies (most → least specific):
+        // A. Exact title + year ±1
+        // B. Exact title + year ±5  (guards against same-name films from different eras)
+        // C. Title starts with query + media + year ±1  (e.g. "Dacoit: A Love Story" for "Dacoit")
+        // D. Title starts with query + media + year ±5
+        // E. Any media type + year ±1
+        // F. Any media type (last resort)
+        const strategies = [
+          (i) => isTT(i) && normL(i) === queryNorm && yearOk(i, 1),
+          (i) => isTT(i) && normL(i) === queryNorm && yearOk(i, 5),
+          (i) => isTT(i) && normL(i).startsWith(queryNorm) && isMedia(i) && yearOk(i, 1),
+          (i) => isTT(i) && normL(i).startsWith(queryNorm) && isMedia(i) && yearOk(i, 5),
+          (i) => isTT(i) && isMedia(i) && yearOk(i, 1),
+          (i) => isTT(i) && isMedia(i),
+        ];
 
-        // C. Fallback: match by title contains and is a film/tv show
-        if (!best) {
-          best = suggestData.d.find(
-            (item) =>
-              item.id &&
-              item.id.startsWith("tt") &&
-              (item.qid === "movie" ||
-                item.qid === "tvSeries" ||
-                item.qid === "tvMiniSeries")
-          );
+        let best = null;
+        for (const strategy of strategies) {
+          best = suggestData.d.find(strategy);
+          if (best) break;
         }
 
         if (best) imdbId = best.id;
