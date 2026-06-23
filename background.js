@@ -580,54 +580,39 @@ function cleanFilename(filename) {
   const lastDotIdx = filename.lastIndexOf(".");
   if (lastDotIdx === -1) return filename;
 
-  let baseName = filename.slice(0, lastDotIdx);
   const ext = filename.slice(lastDotIdx);
-
-  // Strip browser-added duplicate suffix (e.g. " (1)")
-  baseName = baseName.replace(/\s*\(\d+\)$/, "");
+  let baseName = filename.slice(0, lastDotIdx);
 
   let ep = "";
 
-  // 1. Parse TV show episode numbers/ranges (e.g. EP.1.5. or EP.01.)
-  const epMatch = baseName.match(/^EP((\.\d+)+)\./i);
-  if (epMatch) {
-    const numbers = epMatch[1].split(".").filter(Boolean).map(Number);
-    if (numbers.length > 0) {
-      const first = numbers[0];
-      const last = numbers[numbers.length - 1];
-      const pad = (num) => String(num).padStart(2, "0");
-
-      if (first === last) {
-        ep = `EP${pad(first)}`;
-      } else {
-        ep = `EP${pad(first)}-${pad(last)}`;
-      }
-    }
-    baseName = baseName.replace(/^EP(\.\d+)+\./i, "");
-  }
-
-  // 2. Remove tags and DesireMovies branding (including any mirror domain suffix) safely using word boundaries
+  // 1. Strip duplicate suffixes, brackets, and extract EP prefix
   baseName = baseName
-    .replace(/\bdesiremovies(?:[\.\- ]+[a-z0-9\-]+)*\b/gi, "")
-    .replace(/\b10bits?\b/gi, "")
-    .replace(/\b(hevc|hq|hd)\b/gi, "");
+    .replace(/\s*\(\d+\)$/, "")
+    .replace(/[\[\]\(\)\{\}]/g, " ")
+    .replace(/^EP((\.\d+)+)\./i, (_, group) => {
+      const nums = group.split(".").filter(Boolean).map(Number);
+      const pad = (n) => String(n).padStart(2, "0");
+      ep = nums[0] === nums[nums.length - 1] 
+        ? `EP${pad(nums[0])}` 
+        : `EP${pad(nums[0])}-${pad(nums[nums.length - 1])}`;
+      return "";
+    });
 
-  // 3. Capitalize WEB-DL
-  baseName = baseName.replace(/\bwebdl\b/gi, "WEB-DL");
-
-  // 4. Inject EP information after Sxx if present
-  if (ep) {
-    baseName = baseName.replace(/\b(S\d{2})\b/gi, `$1 ${ep}`);
-  }
-
-  // 5. Clean up multiple spaces, convert dots to spaces, and capitalize the first letter of each word to Title Case
+  // 2. Pro Pipeline: Clean, Normalize, and Format
   const cleanName = baseName
+    .replace(/[\-\s]*\bdesiremovies[\w\-\.]*\b|\b(10bits?|hevc|hq|hd)\b/gi, "")
+    .replace(/\bwebdl\b/gi, "WEB-DL")
+    .replace(/\b(S\d{2})\b/gi, ep ? `$1 ${ep}` : "$1")
+    .replace(/(5\.1|2\.0|7\.1|8\.1|2\.1)/g, m => m.replace(".", "_DOT_"))
     .replace(/\./g, " ")
+    .replace(/_DOT_/g, ".")
+    .replace(/[^a-zA-Z0-9\-\.]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/[\-\.]+$/, "")
     .split(" ")
     .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
   return cleanName + ext;
