@@ -137,8 +137,7 @@ function isAllowedBypassUrl(urlStr) {
   return (
     host === "gyanigurus.xyz" ||
     host.endsWith(".gyanigurus.xyz") ||
-    host === "new.gdflix.io" ||
-    host.endsWith(".gdflix.io")
+    host.includes("gdflix")
   );
 }
 
@@ -493,108 +492,118 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Helper to get the base second-level domain (e.g. desiremovies.casa) with security checks to prevent subdomain hijacking
-function getBaseDesireMoviesDomain(hostname) {
+// Helper to get the base second-level domain (e.g. desiremovies.casa) with security checks
+function getBaseDomain(hostname, keyword) {
   const parts = hostname.split(".");
   if (parts.length < 2) return hostname;
 
-  // Verify second-to-last part to ensure desiremovies is the SLD (or SLD on multi-part TLD)
+  // Verify second-to-last part to ensure keyword is the SLD (or SLD on multi-part TLD)
   const sld = parts[parts.length - 2];
-  if (sld.includes("desiremovies")) {
+  if (sld.includes(keyword)) {
     return parts.slice(-2).join(".");
   }
 
   if (parts.length >= 3) {
     const sld2 = parts[parts.length - 3];
-    if (sld2.includes("desiremovies")) {
+    if (sld2.includes(keyword)) {
       return parts.slice(-3).join(".");
     }
+  }
+  
+  // Fallback if keyword is somewhere else in the hostname
+  if (hostname.includes(keyword)) {
+    return hostname;
   }
   return null;
 }
 
-// Function to dynamically register content script matches for a new base domain
-async function registerMirrorDomain(hostname) {
+// Function to dynamically register content scripts for a new base domain
+async function registerDynamicScript(baseDomain, scriptId, keyword) {
   try {
-    const baseDomain = getBaseDesireMoviesDomain(hostname);
-    if (!baseDomain) return;
+    const cacheKey = `${scriptId}_${baseDomain}`;
+    if (registeredMirrors.has(cacheKey)) return;
 
-    if (registeredMirrors.has(baseDomain)) return;
-
-    const scriptId = "dm-dynamic-script";
-    const pattern = `*://*.${baseDomain}/*`;
+    const pattern1 = `*://*.${baseDomain}/*`;
+    const pattern2 = `*://${baseDomain}/*`;
 
     const registered = await chrome.scripting.getRegisteredContentScripts();
     const existing = registered.find(s => s.id === scriptId);
 
     if (existing) {
-      if (existing.matches.includes(pattern)) {
-        registeredMirrors.add(baseDomain);
-        return;
-      }
-
-      const newMatches = [...existing.matches, pattern];
+      const newMatches = new Set([...existing.matches, pattern1, pattern2]);
       await chrome.scripting.updateContentScripts([{
         id: scriptId,
-        matches: newMatches
+        matches: Array.from(newMatches)
       }]);
     } else {
-      await chrome.scripting.registerContentScripts([{
+      const config = {
         id: scriptId,
-        matches: [pattern],
-        js: ["content.js"],
-        css: ["redesign.css"],
+        matches: [pattern1, pattern2],
         runAt: "document_start",
         allFrames: false
-      }]);
+      };
+      
+      if (keyword === "desiremovies") {
+        config.js = ["content.js"];
+        config.css = ["redesign.css"];
+      } else if (keyword === "gdflix") {
+        config.js = ["automation.js"];
+      }
+      
+      await chrome.scripting.registerContentScripts([config]);
     }
-    registeredMirrors.add(baseDomain);
+    registeredMirrors.add(cacheKey);
   } catch (err) {
-    console.error("[DM Reimagined] Failed to register dynamic script:", err);
+    console.error(`[DM Reimagined] Failed to register dynamic script for ${keyword}:`, err);
   }
 }
 
-// Dynamic injection and registration of content.js/redesign.css on DesireMovies domains.
-// The filter prevents this from running on non-matching domains.
+// Dynamic injection and registration of scripts on target domains
 chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId === 0 && details.url) {
     try {
       const url = new URL(details.url);
-      const baseDomain = getBaseDesireMoviesDomain(url.hostname);
+      const isDesire = url.hostname.includes("desiremovies");
+      const isGdflix = url.hostname.includes("gdflix");
+
+      if (!isDesire && !isGdflix) return;
+
+      const keyword = isDesire ? "desiremovies" : "gdflix";
+      const baseDomain = getBaseDomain(url.hostname, keyword);
       if (!baseDomain) return;
 
-      if (registeredMirrors.has(baseDomain)) return;
+      const scriptId = isDesire ? "dm-dynamic-script" : "gdflix-dynamic-script";
+      const cacheKey = `${scriptId}_${baseDomain}`;
+
+      if (registeredMirrors.has(cacheKey)) return;
 
       const pattern = `*://*.${baseDomain}/*`;
 
       // Get registered scripts to check if this hostname is already registered
       const registered = await chrome.scripting.getRegisteredContentScripts();
-      const existing = registered.find(s => s.id === "dm-dynamic-script");
+      const existing = registered.find(s => s.id === scriptId);
       const isRegistered = existing && existing.matches.includes(pattern);
 
       if (isRegistered) {
-        registeredMirrors.add(baseDomain);
+        registeredMirrors.add(cacheKey);
       } else {
         // Register so subsequent page loads run at document_start natively
-        await registerMirrorDomain(url.hostname);
+        await registerDynamicScript(baseDomain, scriptId, keyword);
 
         // Inject now for the very first load to cover this current page
-        chrome.scripting.insertCSS({
-          target: { tabId: details.tabId },
-          files: ["redesign.css"]
-        }).catch(() => { });
-
-        chrome.scripting.executeScript({
-          target: { tabId: details.tabId },
-          files: ["content.js"]
-        }).catch(() => { });
+        if (isDesire) {
+          chrome.scripting.insertCSS({ target: { tabId: details.tabId }, files: ["redesign.css"] }).catch(() => {});
+          chrome.scripting.executeScript({ target: { tabId: details.tabId }, files: ["content.js"] }).catch(() => {});
+        } else if (isGdflix) {
+          chrome.scripting.executeScript({ target: { tabId: details.tabId }, files: ["automation.js"] }).catch(() => {});
+        }
       }
     } catch (e) {
       // Ignore invalid URLs
     }
   }
 }, {
-  url: [{ hostContains: "desiremovies" }]
+  url: [{ hostContains: "desiremovies" }, { hostContains: "gdflix" }]
 });
 
 /**

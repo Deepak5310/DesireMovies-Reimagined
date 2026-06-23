@@ -29,7 +29,6 @@
     {
       "matches": [
         "https://gyanigurus.xyz/*",
-        "https://new.gdflix.io/*",
         "https://fastcdn-dl.pages.dev/*"
       ],
       "js": ["automation.js"],

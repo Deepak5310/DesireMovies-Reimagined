@@ -77,7 +77,7 @@
   }
 
   // --- Gdflix Logic ---
-  else if (host.includes("gdflix.io")) {
+  else if (host.includes("gdflix")) {
     const INSTANT_DL_RE = /instant\s*dl/i;
     let cachedButton = null;
 
