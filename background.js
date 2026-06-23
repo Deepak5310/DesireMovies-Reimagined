@@ -226,61 +226,28 @@ async function getImdbRating(title, year) {
     console.warn("[DM Reimagined] Suggestion fetch failed:", err);
   }
 
-  // 3. Fetch IMDb Details Page and Parse Rating
+  // 3. Fetch IMDb Rating via GraphQL API (Bypasses AWS WAF)
   let imdbRating = null;
   if (imdbId) {
     try {
-      const ratingsUrl = `https://www.imdb.com/title/${imdbId}/`;
-      const ratingsRes = await fetchWithTimeout(ratingsUrl, {
-        credentials: "include",
+      const graphqlUrl = "https://caching.graphql.imdb.com/";
+      const query = `query { title(id: "${imdbId}") { ratingsSummary { aggregateRating } } }`;
+      
+      const ratingsRes = await fetchWithTimeout(graphqlUrl, {
+        method: "POST",
         headers: {
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Cache-Control": "no-cache",
-          "Upgrade-Insecure-Requests": "1"
-        }
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({ query })
       });
-      const html = await ratingsRes.text();
-
-      if (html) {
-        // Method A: JSON-LD script blocks
-        const ldMatches = [...html.matchAll(/<script\s+type=["']application\/ld\+json["']\s*>([\s\S]*?)<\/script>/gi)];
-        for (const match of ldMatches) {
-          try {
-            const parsed = JSON.parse(match[1]);
-            const items = Array.isArray(parsed) ? parsed : [parsed];
-            for (const item of items) {
-              const subItems = item["@graph"] ? item["@graph"] : [item];
-              for (const sub of subItems) {
-                if (sub.aggregateRating?.ratingValue) {
-                  imdbRating = `${parseFloat(sub.aggregateRating.ratingValue).toFixed(1)}/10`;
-                  break;
-                }
-              }
-              if (imdbRating) break;
-            }
-          } catch (e) { }
-          if (imdbRating) break;
-        }
-
-        // Fallback B: Aggregated rating test-id regex (avoids DOMParser in service worker!)
-        if (!imdbRating) {
-          const scoreMatch = html.match(/data-testid="hero-rating-bar__aggregate-rating__score"[^>]*>\s*<span[^>]*>\s*([\d.]+)\s*<\/span>/i);
-          if (scoreMatch) {
-            imdbRating = `${parseFloat(scoreMatch[1]).toFixed(1)}/10`;
-          }
-        }
-
-        // Fallback C: Raw regex ratingValue match
-        if (!imdbRating) {
-          const ratingMatch = html.match(/"ratingValue"\s*:\s*"?([\d.]+)"?/);
-          if (ratingMatch) {
-            imdbRating = `${parseFloat(ratingMatch[1]).toFixed(1)}/10`;
-          }
-        }
+      
+      const json = await ratingsRes.json();
+      if (json?.data?.title?.ratingsSummary?.aggregateRating) {
+        imdbRating = `${json.data.title.ratingsSummary.aggregateRating.toFixed(1)}/10`;
       }
     } catch (err) {
-      console.warn("[DM Reimagined] Detail page fetch/parse failed:", err);
+      console.warn("[DM Reimagined] GraphQL rating fetch failed:", err);
     }
   }
 
