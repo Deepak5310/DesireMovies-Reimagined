@@ -572,6 +572,7 @@
         const response = await sendBgMessage("get_imdb_rating", {
           title: post.cleanTitle,
           year: post.year || "",
+          isSeries: !!post.season,
         });
         if (response && response.success && response.rating && response.rating !== "N/A") {
           imdbBadge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="#f5c518" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span>${response.rating}</span>`;
@@ -1320,8 +1321,20 @@
       backBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg> Back to Browse`;
       main.appendChild(backBtn);
 
+      // Pro Approach: Extract final Source and Qualities early to inject the Premium Poster Badge
+      let qualities = [...new Set(downloadSections.map(s => s.quality).filter(Boolean))];
+      if (!qualities.length) qualities = parsed.quality;
+      
+      const resOrder = { "360p": 1, "480p": 2, "720p": 3, "1080p": 4, "2160p": 5, "4K": 6 };
+      qualities = [...new Set(qualities.map(q => /2160p/i.test(q) ? "4K" : q))]
+        .sort((a, b) => (resOrder[a] || 99) - (resOrder[b] || 99));
+
+      const sources = [...new Set(downloadSections.map(s => s.type).filter(Boolean))];
+      const finalSource = sources.length > 0 ? sources[0].toUpperCase() : (parsed.type ? parsed.type.toUpperCase() : "");
+
       const hero = el("div", { className: "dm-single__hero" });
       const posterWrap = el("div", { className: "dm-single__poster-wrap" });
+
       if (poster) {
         const posterImg = el("img", {
           src: poster,
@@ -1336,6 +1349,15 @@
         posterWrap.classList.add("dm-single__poster-wrap--error");
         posterWrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="opacity:.3"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" x2="7" y1="2" y2="22"/><line x1="17" x2="17" y1="2" y2="22"/><line x1="2" x2="22" y1="12" y2="12"/></svg>`;
       }
+
+      if (finalSource) {
+        const sourceBadge = el("span", {
+          className: "dm-single__poster-badge",
+          textContent: finalSource,
+        });
+        posterWrap.appendChild(sourceBadge);
+      }
+
       hero.appendChild(posterWrap);
 
       const metaCol = el("div", { className: "dm-single__meta-col" });
@@ -1373,32 +1395,22 @@
         );
       }
 
-      // 4. Detailed Info Grid (Year, Season, Language, Genres, Audio, IMDb, etc.)
-      const infoItems =
-        releaseInfo.length > 0
-          ? (() => {
-            const full = releaseInfo.filter(
-              (r) =>
-                r.key !== "Quality" &&
-                r.key !== "Source" &&
-                r.key !== "Format" &&
-                r.key !== "Plot" &&
-                r.key !== "Title",
-            );
-            if (parsed.year && !full.find((r) => r.key === "Year"))
-              full.unshift({ key: "Year", value: parsed.year });
-            if (parsed.season)
-              full.push({ key: "Season", value: parsed.season });
-            return full;
-          })()
-          : [
-            parsed.year && { key: "Year", value: parsed.year },
-            parsed.season && { key: "Season", value: parsed.season },
-            parsed.audio.length && {
-              key: "Audio",
-              value: parsed.audio.slice(0, 2).join(", "),
-            },
-          ].filter(Boolean);
+      // 4. Detailed Info Grid
+      const infoMap = new Map();
+
+      // Inject smart parsed defaults (insertion order dictates display order)
+      if (parsed.year) infoMap.set("Year", parsed.year);
+      if (parsed.season) infoMap.set("Season", parsed.season);
+      if (qualities.length) infoMap.set("Quality", qualities.join(", "));
+      if (parsed.audio.length) infoMap.set("Language", parsed.audio.join(", "));
+
+      // Merge raw DOM info cleanly (ignores unwanted keys and naturally overwrites defaults)
+      const skipKeys = new Set(["Source", "Format", "Plot", "Title", "Quality", "Audio"]);
+      releaseInfo.forEach(({ key, value }) => {
+        if (!skipKeys.has(key)) infoMap.set(key, value);
+      });
+
+      const infoItems = Array.from(infoMap, ([key, value]) => ({ key, value }));
 
       if (infoItems.length > 0) {
         metaCol.appendChild(this.buildInfoGrid(infoItems, imdbId));
@@ -1573,6 +1585,9 @@
           } else {
             dd.textContent = value;
           }
+        } else if (key === "Quality") {
+          dd.classList.add("dm-single__info-val--quality");
+          dd.textContent = value;
         } else {
           dd.textContent = value;
         }
@@ -1589,6 +1604,7 @@
         const response = await sendBgMessage("get_imdb_rating", {
           title: queryTitle,
           year: queryYear,
+          isSeries: !!data.parsed.season,
         });
 
         const imdbValEl = document.querySelector(".dm-single__info-val--imdb");

@@ -151,11 +151,13 @@ function normalizeString(str) {
 /**
  * Service Worker side IMDb rating pipeline
  */
-async function getImdbRating(title, year) {
+async function getImdbRating(title, year, isSeries = false) {
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return { rating: "N/A", id: null };
 
-  const cacheKey = `imdb_${trimmedTitle.toLowerCase()}`;
+  // PRO OPTIMIZATION: Include year in cache key to prevent collision of remakes (e.g., The Lion King 1994 vs 2019)
+  const suffix = isSeries ? "series" : (year || "unknown");
+  const cacheKey = `imdb_${trimmedTitle.toLowerCase()}_${suffix}`;
 
   // 1. Check local cache first
   try {
@@ -196,15 +198,18 @@ async function getImdbRating(title, year) {
         const normL   = (i) => normalizeString(i.l);
         const yearOk  = (i, d) => !targetYear || !i.y || Math.abs(i.y - targetYear) <= d;
         const isMedia = (i) => i.qid === "movie" || i.qid === "tvSeries" || i.qid === "tvMiniSeries";
+        const isTV    = (i) => i.qid === "tvSeries" || i.qid === "tvMiniSeries";
 
         // Cascading strategies (most → least specific):
-        // A. Exact title + year ±1
-        // B. Exact title + year ±5  (guards against same-name films from different eras)
-        // C. Title starts with query + media + year ±1  (e.g. "Dacoit: A Love Story" for "Dacoit")
-        // D. Title starts with query + media + year ±5
-        // E. Any media type + year ±1
-        // F. Any media type (last resort)
-        const strategies = [
+        const strategies = isSeries ? [
+          // PRO APPROACH: If it's a TV series, prioritize exact TV match and COMPLETELY ignore the year 
+          // (since season release years rarely match the original series premiere year)
+          (i) => isTT(i) && normL(i) === queryNorm && isTV(i),
+          (i) => isTT(i) && normL(i).startsWith(queryNorm) && isTV(i),
+          (i) => isTT(i) && normL(i) === queryNorm && isMedia(i),
+          (i) => isTT(i) && isMedia(i),
+        ] : [
+          // Standard Movies/Unknown: strictly rely on release year proximity
           (i) => isTT(i) && normL(i) === queryNorm && yearOk(i, 1),
           (i) => isTT(i) && normL(i) === queryNorm && yearOk(i, 5),
           (i) => isTT(i) && normL(i).startsWith(queryNorm) && isMedia(i) && yearOk(i, 1),
@@ -434,11 +439,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "get_imdb_rating":
       (async () => {
         try {
-          const cacheKey = `imdb_${payload.title.trim().toLowerCase()}`;
+          // PRO OPTIMIZATION: Sync cache key with the year to prevent concurrent fetch collisions on remakes
+          const suffix = payload.isSeries ? "series" : (payload.year || "unknown");
+          const cacheKey = `imdb_${payload.title.trim().toLowerCase()}_${suffix}`;
           let fetchPromise = activeImdbFetches.get(cacheKey);
 
           if (!fetchPromise) {
-            fetchPromise = getImdbRating(payload.title, payload.year);
+            fetchPromise = getImdbRating(payload.title, payload.year, payload.isSeries);
             activeImdbFetches.set(cacheKey, fetchPromise);
             fetchPromise.finally(() => {
               activeImdbFetches.delete(cacheKey);
