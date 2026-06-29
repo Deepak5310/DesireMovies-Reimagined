@@ -109,12 +109,14 @@
       } else if (isKmhd) {
         // KMHD has Cloudflare JS challenges, so headless fetch fails.
         // Instead, open it in a background tab so automation.js can handle it silently.
+        await sendBg("add_log", { title: "Background Bypass", message: `Opening background tab for ${new URL(href).hostname}`, status: "warning" }).catch(()=>{});
         await sendBg("open_background_tab", { url: href });
         showStatus(anchor, "✅ Bypassing in background");
       }
     } catch (err) {
       // Everything failed — open the original link directly.
       console.warn("[DM] All bypass paths failed:", err.message);
+      await sendBg("add_log", { title: "All Failed", message: `Opening ${new URL(href).hostname} normally.`, status: "error" }).catch(()=>{});
       await sendBg("open_background_tab", { url: href }).catch(() => {});
     } finally {
       // Keep the success message visible for a bit longer for KMHD since it takes time

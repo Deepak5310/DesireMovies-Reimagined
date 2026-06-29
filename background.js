@@ -99,6 +99,21 @@ async function fetchHTML(url) {
   return res.text();
 }
 
+// ─── Logging ───────────────────────────────────────────────────────────────
+
+const MAX_LOGS = 10;
+async function addLog(title, message, status = "info") {
+  try {
+    const data = await chrome.storage.local.get(["bypassLogs"]);
+    const logs = data.bypassLogs || [];
+    logs.unshift({ title, message, status, timestamp: Date.now() });
+    if (logs.length > MAX_LOGS) logs.pop();
+    await chrome.storage.local.set({ bypassLogs: logs });
+  } catch (e) {
+    console.warn("[DM] Failed to add log", e);
+  }
+}
+
 // ─── Security ──────────────────────────────────────────────────────────────
 
 /** True only for http/https URLs. */
@@ -290,28 +305,54 @@ const actions = {
   },
 };
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg?.action) {
-    sendResponse({ success: false, error: "Invalid message" });
+chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+  if (req.action === "add_log") {
+    addLog(req.payload.title, req.payload.message, req.payload.status);
+    sendResponse({ success: true });
     return false;
   }
 
-  const handler = actions[msg.action];
-  if (!handler) {
-    sendResponse({ success: false, error: `Unknown action: ${msg.action}` });
-    return false;
-  }
-
-  const result = handler(msg.payload ?? {}, sender);
-
-  // Async handler returns a Promise — keep the channel open.
-  if (result instanceof Promise) {
-    result.then(sendResponse).catch((e) =>
-      sendResponse({ success: false, error: e.message })
-    );
+  if (req.action === "full_bypass") {
+    addLog("Bypass Started", `Headless fetch for ${new URL(req.payload.url).hostname}`, "info");
+    resolveFullChain(req.payload.url)
+      .then((result) => {
+        addLog("Download Started", "Successfully resolved final download link.", "success");
+        chrome.downloads.download({ url: result.downloadUrl });
+        sendResponse({ success: true });
+      })
+      .catch((err) => {
+        addLog("Headless Failed", err.message, "error");
+        sendResponse({ success: false, error: err.message });
+      });
     return true;
   }
 
+  if (req.action === "bypass_gyanigurus") {
+    actions.bypass_gyanigurus(req.payload)
+      .then((res) => {
+        if (res.success) {
+          addLog("Tab Fallback", "Headless failed, using background tab for GDFlix.", "warning");
+        }
+        sendResponse(res);
+      })
+      .catch((err) => {
+        addLog("Tab Fallback Failed", err.message, "error");
+        sendResponse({ success: false, error: err.message });
+      });
+    return true;
+  }
+
+  const handler = actions[req.action];
+  if (!handler) {
+    sendResponse({ success: false, error: `Unknown action: ${req.action}` });
+    return false;
+  }
+
+  const result = handler(req.payload ?? {}, sender);
+  if (result instanceof Promise) {
+    result.then(sendResponse).catch((e) => sendResponse({ success: false, error: e.message }));
+    return true;
+  }
   sendResponse(result);
   return false;
 });
@@ -322,8 +363,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 const RE_TRAILING_DUP   = /\s*\(\d+\)$/;
 const RE_BRACKETS       = /[\[\]\(\)\{\}]/g;
 const RE_EP_PREFIX      = /^EP((\.\d+)+)\./i;
-const RE_BRANDING       = /[-\s]*\bdesiremovies[\w\-.]*\b|\b(10bits?|hevc|hq|hd)\b/gi;
-const RE_WEBDL          = /\bwebdl\b/gi;
+const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|4k|2160p|1080p|720p|480p|dual[- ]?audio|esubs?|multi[- ]?audio|x264|x265|web[- ]?dl|brrip|bluray)\b/gi;
+const RE_EXTRA_DASHES = /-{2,}/g;
 const RE_SEASON         = /\b(S\d{2})\b/gi;
 const RE_AUDIO_DOTS     = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
 const RE_ALL_DOTS       = /\./g;
@@ -361,7 +402,6 @@ function cleanFilename(filename) {
 
   const clean = base
     .replace(RE_BRANDING, "")
-    .replace(RE_WEBDL, "WEB-DL")
     .replace(RE_SEASON, epTag ? `$1 ${epTag}` : "$1")
     .replace(RE_AUDIO_DOTS, (m) => m.replace(".", "_DOT_"))
     .replace(RE_ALL_DOTS, " ")
