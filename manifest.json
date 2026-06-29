@@ -23,7 +23,16 @@
     "service_worker": "background.js"
   },
   "options_page": "options/options.html",
-  "permissions": ["downloads", "storage", "scripting"],
+  "permissions": ["downloads", "storage", "scripting", "declarativeNetRequest"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "block_scripts",
+        "enabled": true,
+        "path": "rules/block_scripts.json"
+      }
+    ]
+  },
   "host_permissions": [
     "*://*.gyanigurus.xyz/*",
     "*://*.gdflix.io/*",
