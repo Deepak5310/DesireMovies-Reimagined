@@ -1,20 +1,41 @@
-// DesireMovies Automation — Consolidated Automation Script
-// Handles bypass, auto-clicks, and fallback logic based on the domain.
+// automation.js — DesireMovies Automation
+// Injected into bypass-chain pages (Gyanigurus, GDFlix, FastCDN, KMHD).
+// Handles DOM-based auto-clicking and tab-close signalling for each step
+// of the download bypass flow.
 
 (function () {
   "use strict";
 
   const host = window.location.hostname;
-  
-  // Quick exit if not a target domain
-  if (!host.includes("gyanigurus.xyz") && !host.includes("gdflix") && !host.includes("fastcdn-dl.pages.dev") && !host.includes("kmhd")) {
-    return;
-  }
+
+  // ─── Shared Utilities ──────────────────────────────────────────────────────
+
+  /** Shared MutationObserver options used by every domain handler. */
+  const OBSERVER_OPTIONS = { childList: true, subtree: true };
+
+  /** Safety timeout before giving up and disconnecting the observer (ms). */
+  const SAFETY_TIMEOUT_MS = 15000;
 
   let done = false;
   let safetyTimeoutId = null;
   let observer = null;
 
+  /** Disconnect the MutationObserver and cancel the safety timeout. */
+  function cleanup() {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    if (safetyTimeoutId) {
+      clearTimeout(safetyTimeoutId);
+      safetyTimeoutId = null;
+    }
+  }
+
+  /**
+   * Returns a debounced version of `fn` that fires after `delay` ms of inactivity.
+   * Used to batch rapid DOM mutations into a single handler call.
+   */
   function debounce(fn, delay) {
     let timeout;
     return function (...args) {
@@ -23,89 +44,95 @@
     };
   }
 
-  function cleanup() {
-    if (observer) observer.disconnect();
-    if (safetyTimeoutId) clearTimeout(safetyTimeoutId);
+  /**
+   * Clicks a link anchor in-page (no new tab) and schedules a tab-close message.
+   * Used as the final action once the target link is found.
+   *
+   * @param {HTMLAnchorElement} anchor - The link to click.
+   * @param {number} [closeDelayMs=10000] - ms to wait before sending close_tab.
+   */
+  function clickAndScheduleClose(anchor, closeDelayMs = 10000) {
+    done = true;
+    anchor.target = "_self";
+    anchor.click();
+    cleanup();
+    setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), closeDelayMs);
   }
 
-  function closeFallback() {
-    setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 10000);
+  /**
+   * Start observing the document for DOM changes, calling `handler` on each
+   * mutation batch (debounced). Also arms the safety timeout.
+   *
+   * @param {Function} handler - Called on mutation (and optionally immediately).
+   * @param {number} [debounceMs=150] - Debounce delay in ms.
+   */
+  function observeWithTimeout(handler, debounceMs = 150) {
+    const debouncedHandler = debounce(handler, debounceMs);
+    observer = new MutationObserver(debouncedHandler);
+    observer.observe(document.documentElement, OBSERVER_OPTIONS);
+    safetyTimeoutId = setTimeout(cleanup, SAFETY_TIMEOUT_MS);
   }
 
-  // --- Gyanigurus Logic ---
+  // ─── Gyanigurus Handler ────────────────────────────────────────────────────
+  // Flow: click "Open Link" button → wait for GDFlix anchor → click it in-page.
+
   if (host.includes("gyanigurus.xyz")) {
-    const BUTTON_TEXT_RE = /click\s*here|open\s*link/i;
-    let openBtnClicked = false;
+    const OPEN_LINK_RE = /click\s*here|open\s*link/i;
+    let unlockClicked = false;
 
-    function tryClickOpenButton() {
-      if (openBtnClicked) return true;
+    /** Click the "Open Link" / "Click Here" unlock button if present. */
+    function tryClickUnlock() {
+      if (unlockClicked) return true;
       for (const btn of document.querySelectorAll("button")) {
-        if ((btn.getAttribute("onclick") || "").includes("show_content_v") || BUTTON_TEXT_RE.test(btn.textContent)) {
+        const onclick = btn.getAttribute("onclick") || "";
+        if (onclick.includes("show_content_v") || OPEN_LINK_RE.test(btn.textContent)) {
           btn.click();
-          openBtnClicked = true;
+          unlockClicked = true;
           return true;
         }
       }
       return false;
     }
 
-    function tryClickGdflix() {
+    /** Navigate to GDFlix in-page once its link appears in the DOM. */
+    function tryClickGdflixLink() {
       if (done) return true;
-      const a = document.querySelector('a[href*="gdflix"]');
-      if (a) {
-        done = true;
-        a.target = "_self";
-        a.click();
-        cleanup();
-        closeFallback();
+      const anchor = document.querySelector('a[href*="gdflix"]');
+      if (anchor) {
+        clickAndScheduleClose(anchor);
         return true;
       }
       return false;
     }
 
     function runGyanigurus() {
-      if (tryClickGdflix()) return;
-      tryClickOpenButton();
-      if (tryClickGdflix()) return;
+      if (tryClickGdflixLink()) return;
+      tryClickUnlock();
+      if (tryClickGdflixLink()) return;
 
-      const debouncedCallback = debounce(() => {
-        if (tryClickGdflix()) return;
-        if (!openBtnClicked) tryClickOpenButton();
-      }, 150);
-
-      observer = new MutationObserver(debouncedCallback);
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-      safetyTimeoutId = setTimeout(cleanup, 15000);
+      observeWithTimeout(() => {
+        if (tryClickGdflixLink()) return;
+        if (!unlockClicked) tryClickUnlock();
+      });
     }
 
     runGyanigurus();
   }
 
-  // --- Gdflix Logic ---
+  // ─── GDFlix Handler ────────────────────────────────────────────────────────
+  // Flow: find "Instant DL" anchor → click it in-page.
+
   else if (host.includes("gdflix")) {
     const INSTANT_DL_RE = /instant\s*dl/i;
-    let cachedButton = null;
 
+    /** Find and click the Instant DL anchor if it exists in the DOM. */
     function tryClickInstantDL() {
       if (done) return true;
-      if (cachedButton) {
-        done = true;
-        cachedButton.target = "_self";
-        cachedButton.click();
-        cleanup();
-        closeFallback();
-        return true;
-      }
-      const anchors = document.querySelectorAll("a");
-      for (const a of anchors) {
-        const b = a.querySelector("b");
-        if ((b && INSTANT_DL_RE.test(b.textContent)) || INSTANT_DL_RE.test(a.textContent)) {
-          cachedButton = a;
-          done = true;
-          a.target = "_self";
-          a.click();
-          cleanup();
-          closeFallback();
+      for (const anchor of document.querySelectorAll("a")) {
+        const labelEl = anchor.querySelector("b");
+        const labelText = labelEl ? labelEl.textContent : anchor.textContent;
+        if (INSTANT_DL_RE.test(labelText)) {
+          clickAndScheduleClose(anchor);
           return true;
         }
       }
@@ -117,28 +144,32 @@
       observer = new MutationObserver(() => {
         if (tryClickInstantDL()) cleanup();
       });
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-      safetyTimeoutId = setTimeout(cleanup, 15000);
+      observer.observe(document.documentElement, OBSERVER_OPTIONS);
+      safetyTimeoutId = setTimeout(cleanup, SAFETY_TIMEOUT_MS);
     }
 
     runGdflix();
   }
 
-  // --- FastCDN Logic ---
+  // ─── FastCDN Handler ───────────────────────────────────────────────────────
+  // Flow: wait for #vd href to resolve (not "#") → click #downloadbtn → close tab after 5s.
+
   else if (host.includes("fastcdn-dl.pages.dev")) {
+    /** Click download once the loader resolves (href becomes a real URL). */
     function tryClickDownload() {
       if (done) return true;
       const anchor = document.querySelector("#vd");
       const btn = document.querySelector("#downloadbtn");
-      if (anchor && btn) {
-        const href = anchor.getAttribute("href");
-        if (href && href !== "#" && href.startsWith("http")) {
-          done = true;
-          btn.click();
-          cleanup();
-          setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 5000);
-          return true;
-        }
+      if (!anchor || !btn) return false;
+
+      const href = anchor.getAttribute("href");
+      if (href && href !== "#" && href.startsWith("http")) {
+        done = true;
+        btn.click();
+        cleanup();
+        // Close this tab 5s after triggering the download.
+        setTimeout(() => chrome.runtime.sendMessage({ action: "close_tab" }), 5000);
+        return true;
       }
       return false;
     }
@@ -148,64 +179,67 @@
       observer = new MutationObserver(() => {
         if (tryClickDownload()) cleanup();
       });
-      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["href", "class"] });
-      safetyTimeoutId = setTimeout(cleanup, 15000);
+      observer.observe(document.documentElement, {
+        ...OBSERVER_OPTIONS,
+        attributes: true,
+        attributeFilter: ["href", "class"]
+      });
+      safetyTimeoutId = setTimeout(cleanup, SAFETY_TIMEOUT_MS);
     }
 
     runFastCDN();
   }
 
-  // --- KMHD Logic ---
+  // ─── KMHD Handler ─────────────────────────────────────────────────────────
+  // Flow: click "Unlock Links" button (waits 1.5s for SvelteKit hydration) →
+  //       watch for GDFlix link/button → click it → close this tab.
+
   else if (host.includes("kmhd")) {
-    const BUTTON_TEXT_RE = /unlock\s*links|click\s*to\s*unlock/i;
+    const UNLOCK_RE = /unlock\s*links|click\s*to\s*unlock/i;
+    let unlockClicked = false;
+    let gdflixClicked = false;
 
-    let clickedUnlock = false;
-    let clickedGdflix = false;
+    /**
+     * Schedule a one-time tab close.
+     * Fires immediately on visibility-hidden (e.g. new tab opened) or after 4s fallback.
+     */
+    function scheduleTabClose() {
+      let closed = false;
+      const doClose = () => {
+        if (closed) return;
+        closed = true;
+        chrome.runtime.sendMessage({ action: "close_tab" });
+      };
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") doClose();
+      });
+      setTimeout(doClose, 4000);
+    }
 
-    function tryClickUnlockOrGdflix() {
-      if (clickedGdflix) return true;
+    function tryClickGdflixOrUnlock() {
+      if (gdflixClicked) return true;
 
-      // 1. If we are on the page with links, find the gdflix link/button and click it
-      const gdflixLink = document.querySelector('a[href*="gdflix"]');
-      const gdflixImgBtn = document.querySelector('img[alt*="gdflix"]')?.closest('button');
-      const targetElement = gdflixLink || gdflixImgBtn;
-      
-      if (targetElement) {
-        clickedGdflix = true;
-        if (targetElement.tagName === 'A') {
-          targetElement.target = "_self";
-        }
-        targetElement.click();
+      // Priority: if GDFlix link or image-button is already in DOM, click it.
+      const gdflixAnchor = document.querySelector('a[href*="gdflix"]');
+      const gdflixImgBtn = document.querySelector('img[alt*="gdflix"]')?.closest("button");
+      const target = gdflixAnchor || gdflixImgBtn;
+
+      if (target) {
+        gdflixClicked = true;
+        if (target.tagName === "A") target.target = "_self";
+        target.click();
         cleanup();
-        
-        // Wait for the new tab to open (this tab becomes hidden) before closing
-        let closed = false;
-        const doClose = () => {
-          if (closed) return;
-          closed = true;
-          chrome.runtime.sendMessage({ action: "close_tab" });
-        };
-        
-        document.addEventListener("visibilitychange", () => {
-          if (document.visibilityState === 'hidden') {
-            doClose();
-          }
-        });
-        
-        // Fallback timeout just in case
-        setTimeout(doClose, 4000);
+        scheduleTabClose();
         return true;
       }
 
-      // 2. If we are on the initial page, click the unlock button
-      if (!clickedUnlock) {
+      // Otherwise try to click the unlock button.
+      // Waits 1.5s after click to allow SvelteKit to hydrate the link list.
+      if (!unlockClicked) {
         for (const btn of document.querySelectorAll("button")) {
-          if (BUTTON_TEXT_RE.test(btn.textContent)) {
-            clickedUnlock = true;
-            // Wait 1.5 seconds for SvelteKit to hydrate before clicking
-            setTimeout(() => {
-              btn.click();
-            }, 1500);
+          if (UNLOCK_RE.test(btn.textContent)) {
+            unlockClicked = true;
+            setTimeout(() => btn.click(), 1500);
             break;
           }
         }
@@ -214,15 +248,8 @@
     }
 
     function runKmhd() {
-      if (tryClickUnlockOrGdflix()) return;
-      
-      const debouncedCallback = debounce(() => {
-        if (tryClickUnlockOrGdflix()) return;
-      }, 150);
-
-      observer = new MutationObserver(debouncedCallback);
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-      safetyTimeoutId = setTimeout(cleanup, 15000);
+      if (tryClickGdflixOrUnlock()) return;
+      observeWithTimeout(() => tryClickGdflixOrUnlock());
     }
 
     runKmhd();

@@ -1,15 +1,28 @@
-// content.js - DesireMovies Automation
-// Injected on DesireMovies to intercept bypass links and trigger headless background bypass
+// content.js — DesireMovies Automation
+// Injected into DesireMovies and KatMovieHD pages.
+//
+// Intercepts clicks on Gyanigurus bypass links and performs a headless bypass
+// (GET + POST via background service worker) to extract the GDFlix URL directly,
+// avoiding a visible redirect through the Gyanigurus page.
+//
+// GDFlix links are intentionally NOT intercepted here — they are handled
+// by automation.js once the GDFlix tab is open.
 
-(function() {
+(function () {
   "use strict";
 
   const host = window.location.hostname;
-  if (!host.includes("desiremovies") && !host.includes("katmoviehd")) {
-    return;
-  }
+  if (!host.includes("desiremovies") && !host.includes("katmoviehd")) return;
 
-  // Helper to send messages to background script
+  // ─── Messaging ─────────────────────────────────────────────────────────────
+
+  /**
+   * Send a message to the background service worker and return a Promise.
+   *
+   * @param {string} action
+   * @param {object} [payload]
+   * @returns {Promise<object>}
+   */
   function sendBgMessage(action, payload = {}) {
     return new Promise((resolve, reject) => {
       try {
@@ -26,45 +39,62 @@
     });
   }
 
-  // Intercept clicks on the whole document
+  // ─── UI State Helpers ──────────────────────────────────────────────────────
+
+  /**
+   * Show a "bypassing" spinner on the clicked link and return a reset function.
+   *
+   * @param {HTMLAnchorElement} anchor
+   * @returns {() => void} Call this to restore the original link state.
+   */
+  function showBypassingState(anchor) {
+    const originalHTML = anchor.innerHTML;
+    const originalPointerEvents = anchor.style.pointerEvents;
+    const originalCursor = anchor.style.cursor;
+
+    anchor.innerHTML = `<span style="opacity:0.8">⏳ Bypassing…</span>`;
+    anchor.style.pointerEvents = "none";
+    anchor.style.cursor = "wait";
+
+    return () => {
+      anchor.innerHTML = originalHTML;
+      anchor.style.pointerEvents = originalPointerEvents;
+      anchor.style.cursor = originalCursor;
+    };
+  }
+
+  // ─── Click Interception ────────────────────────────────────────────────────
+
   document.addEventListener("click", async (e) => {
-    // Check if clicked element or its parent is a link
-    const a = e.target.closest("a");
-    if (!a) return;
+    const anchor = e.target.closest("a");
+    if (!anchor) return;
 
-    const href = a.getAttribute("href");
-    if (href && (href.includes("gyanigurus") || href.includes("gdflix"))) {
-      e.preventDefault();
-      e.stopPropagation();
+    const href = anchor.getAttribute("href");
 
-      const originalHTML = a.innerHTML;
-      const originalPointerEvents = a.style.pointerEvents;
-      
-      // Update UI to show bypassing state
-      a.innerHTML = `<span style="opacity:0.8;">⏳ Bypassing...</span>`;
-      a.style.pointerEvents = "none";
-      a.style.cursor = "wait";
+    // Only intercept Gyanigurus links. GDFlix links open directly through
+    // automation.js in the new tab — no headless bypass needed here.
+    if (!href || !href.includes("gyanigurus")) return;
 
-      try {
-        const response = await sendBgMessage("bypass_gyanigurus", { url: href });
+    e.preventDefault();
+    e.stopPropagation();
 
-        if (response && response.success && response.gdflixUrl) {
-          sendBgMessage("open_background_tab", { url: response.gdflixUrl });
-        } else {
-          // Fallback: open the original URL if background bypass failed
-          sendBgMessage("open_background_tab", { url: href });
-        }
-      } catch (err) {
-        console.warn("[DM Automation] Bypass failed, falling back to foreground:", err);
-        sendBgMessage("open_background_tab", { url: href });
-      } finally {
-        // Restore original UI (just in case they stay on the page)
-        setTimeout(() => {
-            a.innerHTML = originalHTML;
-            a.style.pointerEvents = originalPointerEvents;
-            a.style.cursor = "";
-        }, 2000);
+    const restoreLink = showBypassingState(anchor);
+
+    try {
+      const response = await sendBgMessage("bypass_gyanigurus", { url: href });
+      const targetUrl = (response?.success && response.gdflixUrl) ? response.gdflixUrl : href;
+
+      if (!response?.success) {
+        console.warn("[DM] Headless bypass failed, falling back to direct open:", response?.error);
       }
+
+      await sendBgMessage("open_background_tab", { url: targetUrl });
+    } catch (err) {
+      console.warn("[DM] Bypass error, falling back to direct open:", err.message);
+      await sendBgMessage("open_background_tab", { url: href });
+    } finally {
+      // Restore link after a short delay (user may still be on this page).
+      setTimeout(restoreLink, 2000);
     }
   });
 

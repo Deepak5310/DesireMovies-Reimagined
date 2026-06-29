@@ -1,53 +1,60 @@
 /**
- * background.js — Background Service Worker
+ * background.js — Service Worker
  * DesireMovies Automation
  *
- * Handles file renaming during downloads and background tasks like closing tabs
- * and headless bypass proxying.
+ * Responsibilities:
+ *   1. Headless bypass: fetches Gyanigurus pages and extracts the GDFlix URL
+ *      so content.js can open it without navigating the user's current tab.
+ *   2. Tab management: opens background tabs and closes automation tabs on request.
+ *   3. Filename normalization: intercepts chrome.downloads and cleans filenames.
  */
 
 "use strict";
 
-// Concurrent bypass deduplication map (url -> Promise)
+// ─── Session State ─────────────────────────────────────────────────────────
+// These in-memory Maps are restored from chrome.storage.session on startup.
+// They will reset if the service worker is killed (expected MV3 behaviour).
+
+/** Deduplication map: url → pending bypass Promise. */
 const activeBypasses = new Map();
 
-// Session bypass cache copies
+/** Cache of successfully resolved GDFlix URLs keyed by source URL. */
 const bypassCache = new Map();
-const failureCounters = new Map(); // domain -> count
-const fallbackDomains = new Set(); // domains flagged for foreground fallback
 
-let isInitialized = false;
+/** Consecutive failure count per hostname. */
+const failureCounters = new Map();
+
+/** Hostnames that have failed ≥2 times and should fall back to foreground navigation. */
+const fallbackDomains = new Set();
+
+/**
+ * Restore Maps from session storage. Awaited before any bypass logic runs,
+ * so state survives service-worker restarts within the same browser session.
+ */
 const initPromise = (async () => {
   try {
-    const data = await chrome.storage.session.get(["bypassCache", "failureCounters", "fallbackDomains"]);
+    const data = await chrome.storage.session.get([
+      "bypassCache",
+      "failureCounters",
+      "fallbackDomains"
+    ]);
     if (data.bypassCache) {
-      for (const [k, v] of Object.entries(data.bypassCache)) {
-        bypassCache.set(k, v);
-      }
+      for (const [k, v] of Object.entries(data.bypassCache)) bypassCache.set(k, v);
     }
     if (data.failureCounters) {
-      for (const [k, v] of Object.entries(data.failureCounters)) {
+      for (const [k, v] of Object.entries(data.failureCounters))
         failureCounters.set(k, parseInt(v) || 0);
-      }
     }
     if (data.fallbackDomains) {
-      for (const d of data.fallbackDomains) {
-        fallbackDomains.add(d);
-      }
+      for (const d of data.fallbackDomains) fallbackDomains.add(d);
     }
   } catch (err) {
-    console.warn("[DM Automation] Failed to load session storage:", err);
+    console.warn("[DM] Failed to restore session state:", err);
   }
-  isInitialized = true;
 })();
 
-async function ensureInitialized() {
-  if (!isInitialized) {
-    await initPromise;
-  }
-}
-
-async function updateSessionStorage() {
+/** Persist the current state of all Maps back to session storage. */
+async function persistSessionState() {
   try {
     await chrome.storage.session.set({
       bypassCache: Object.fromEntries(bypassCache),
@@ -55,139 +62,123 @@ async function updateSessionStorage() {
       fallbackDomains: Array.from(fallbackDomains)
     });
   } catch (err) {
-    console.warn("[DM Automation] Failed to update session storage:", err);
+    console.warn("[DM] Failed to persist session state:", err);
   }
 }
 
+// ─── Network Utilities ─────────────────────────────────────────────────────
+
 /**
- * Helper to fetch with an AbortController timeout.
+ * fetch() wrapper that aborts after `timeoutMs` milliseconds.
+ *
+ * @param {string} url
+ * @param {RequestInit} [options]
+ * @param {number} [timeoutMs=8000]
+ * @returns {Promise<Response>}
  */
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const timerId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(id);
-    return response;
-  } catch (error) {
-    clearTimeout(id);
-    throw error;
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timerId);
   }
 }
 
-/**
- * URL Security Validation Helpers
- */
+// ─── Security Helpers ──────────────────────────────────────────────────────
+
+/** Returns true only for http: or https: URLs. */
 function isValidHttpUrl(string) {
-  let url;
   try {
-    url = new URL(string);
-  } catch (_) {
+    const { protocol } = new URL(string);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
     return false;
   }
-  return url.protocol === "http:" || url.protocol === "https:";
 }
 
+/**
+ * Allowlist for headless bypass targets.
+ * Only Gyanigurus URLs may be submitted to performBypass().
+ */
 function isAllowedBypassUrl(urlStr) {
   if (!isValidHttpUrl(urlStr)) return false;
-  const url = new URL(urlStr);
-  const host = url.hostname;
-  return (
-    host === "gyanigurus.xyz" ||
-    host.endsWith(".gyanigurus.xyz") ||
-    host.includes("gdflix")
-  );
+  const { hostname } = new URL(urlStr);
+  return hostname === "gyanigurus.xyz" || hostname.endsWith(".gyanigurus.xyz");
 }
 
-/**
- * Robust Attribute Parser for HTML Tags
- */
-function parseAttributes(tagString) {
-  const attrs = {};
-  const attrRegex = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
-  let match;
-  while ((match = attrRegex.exec(tagString)) !== null) {
-    const key = match[1].toLowerCase();
-    const value = match[2] || match[3] || match[4] || "";
-    attrs[key] = value;
-  }
-  return attrs;
-}
+// ─── Headless Bypass ───────────────────────────────────────────────────────
 
 /**
- * Atomic function to perform gyanigurus bypass.
+ * Fetches a Gyanigurus page, submits the hidden form, and extracts the GDFlix URL.
+ *
+ * Strategy:
+ *   GET  → check if GDFlix href is already present (some pages don't need a POST)
+ *   POST → submit hidden form inputs → extract GDFlix href from response HTML
+ *
+ * @param {string} url - A validated Gyanigurus URL.
+ * @returns {Promise<{ success: true, gdflixUrl: string }>}
+ * @throws {Error} if the GDFlix URL cannot be extracted.
  */
 async function performBypass(url) {
-  await ensureInitialized();
+  await initPromise;
 
-  // Check session cache first
   if (bypassCache.has(url)) {
     return { success: true, gdflixUrl: bypassCache.get(url) };
   }
 
   const domain = new URL(url).hostname;
 
-  // Check if domain is flagged for foreground fallback
-  if (fallbackDomains.has(domain)) {
-    throw new Error("Domain flagged for foreground fallback");
+  // Step 1: GET landing page
+  const getResponse = await fetchWithTimeout(url);
+  if (!getResponse.ok) {
+    throw new Error(`HTTP ${getResponse.status} fetching landing page`);
   }
+  const html1 = await getResponse.text();
 
-  // Step 1: Fetch the first landing page
-  const response1 = await fetchWithTimeout(url);
-  if (!response1.ok) {
-    throw new Error(`HTTP error ${response1.status} fetching landing page`);
-  }
-  const html1 = await response1.text();
-
-  // Check if gdflix URL is already present in the HTML (fallback)
-  let gdflixMatch = html1.match(/href=["'](https?:\/\/[^"']*gdflix[^"']*)["']/i);
+  // Check if GDFlix link is already present (no POST needed)
+  let gdflixMatch = html1.match(/href=["'](https?:\/\/[^"']*gdflix[^"']*)['"]/i);
   if (gdflixMatch) {
-    bypassCache.set(url, gdflixMatch[1]);
-    failureCounters.set(domain, 0); // reset failures on success
-    await updateSessionStorage();
-    return { success: true, gdflixUrl: gdflixMatch[1] };
+    return cacheAndReturn(url, domain, gdflixMatch[1]);
   }
 
-  // Step 2: Extract hidden inputs from form using robust attribute parser
-  const inputRegex = /<input[^>]*>/gi;
-  const tags = html1.match(inputRegex) || [];
+  // Step 2: Extract hidden form fields using DOMParser (safe, no regex HTML parsing)
+  const doc = new DOMParser().parseFromString(html1, "text/html");
   const formData = new URLSearchParams();
-
-  for (const tag of tags) {
-    const attrs = parseAttributes(tag);
-    if (attrs.type === "hidden" && attrs.name) {
-      formData.append(attrs.name, attrs.value || "");
-    }
+  for (const input of doc.querySelectorAll('input[type="hidden"][name]')) {
+    formData.append(input.name, input.value ?? "");
   }
 
-  // Step 3: Perform POST request to the same URL to unlock links
-  const response2 = await fetchWithTimeout(url, {
+  // Step 3: POST the hidden form to unlock links
+  const postResponse = await fetchWithTimeout(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: formData.toString()
   });
-  if (!response2.ok) {
-    throw new Error(`HTTP error ${response2.status} submitting bypass form`);
+  if (!postResponse.ok) {
+    throw new Error(`HTTP ${postResponse.status} submitting bypass form`);
   }
-  const html2 = await response2.text();
+  const html2 = await postResponse.text();
 
-  // Step 4: Extract gdflix URL from the POST response
-  gdflixMatch = html2.match(/href=["'](https?:\/\/[^"']*gdflix[^"']*)["']/i);
+  // Step 4: Extract GDFlix URL from POST response
+  gdflixMatch = html2.match(/href=["'](https?:\/\/[^"']*gdflix[^"']*)['"]/i);
   if (gdflixMatch) {
-    bypassCache.set(url, gdflixMatch[1]);
-    failureCounters.set(domain, 0); // reset failures on success
-    await updateSessionStorage();
-    return { success: true, gdflixUrl: gdflixMatch[1] };
+    return cacheAndReturn(url, domain, gdflixMatch[1]);
   }
 
-  throw new Error("gdflix link not found in POST response");
+  throw new Error("GDFlix link not found in POST response");
 }
 
+/** Cache a successful bypass result and reset the failure counter. */
+async function cacheAndReturn(sourceUrl, domain, gdflixUrl) {
+  bypassCache.set(sourceUrl, gdflixUrl);
+  failureCounters.set(domain, 0);
+  await persistSessionState();
+  return { success: true, gdflixUrl };
+}
+
+// ─── Message Handler ───────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object" || !message.action) {
@@ -198,74 +189,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { action, payload = {} } = message;
 
   switch (action) {
-    case "close_tab":
-      if (sender.tab?.id) {
-        const tabId = sender.tab.id;
+    // Close the tab that sent this message.
+    case "close_tab": {
+      const tabId = sender.tab?.id;
+      if (tabId) {
         chrome.tabs.get(tabId, (tab) => {
           if (chrome.runtime.lastError || !tab) return;
-          chrome.tabs.remove(tabId).catch(() => { });
+          chrome.tabs.remove(tabId).catch(() => {});
         });
       }
+      sendResponse({ success: true });
       return false;
+    }
 
-    case "open_background_tab":
+    // Open a URL in a new background tab.
+    case "open_background_tab": {
       if (payload.url) {
         chrome.tabs.create({ url: payload.url, active: false });
       }
       sendResponse({ success: true });
       return false;
+    }
 
-    case "bypass_gyanigurus":
+    // Headless Gyanigurus bypass: fetch + form-submit + extract GDFlix URL.
+    case "bypass_gyanigurus": {
+      const url = payload.url;
+      if (!url) {
+        sendResponse({ success: false, error: "Missing URL in payload" });
+        return false;
+      }
+      if (!isAllowedBypassUrl(url)) {
+        sendResponse({ success: false, error: "URL not in bypass allowlist" });
+        return false;
+      }
+
       (async () => {
-        const url = payload.url;
-        if (!url) {
-          sendResponse({ success: false, error: "Missing URL payload" });
-          return;
-        }
-
-        if (!isAllowedBypassUrl(url)) {
-          sendResponse({ success: false, error: "Target bypass URL is not allowed or is invalid" });
-          return;
-        }
-
-        await ensureInitialized();
+        await initPromise;
         const domain = new URL(url).hostname;
 
-        // Check if domain is flagged for fallback to foreground
         if (fallbackDomains.has(domain)) {
-          sendResponse({ success: false, fallback: true, error: "Foreground fallback active" });
+          sendResponse({ success: false, fallback: true, error: "Domain flagged for foreground fallback" });
           return;
         }
 
-        // Deduplicate concurrent bypasses for same URL
+        // Deduplicate concurrent requests for the same URL.
         let bypassPromise = activeBypasses.get(url);
         if (!bypassPromise) {
           bypassPromise = performBypass(url);
           activeBypasses.set(url, bypassPromise);
-
-          // Clean up map once resolved/rejected
-          bypassPromise.finally(() => {
-            activeBypasses.delete(url);
-          });
+          bypassPromise.finally(() => activeBypasses.delete(url));
         }
 
         try {
           const result = await bypassPromise;
           sendResponse(result);
         } catch (err) {
-          // Fallback intelligence tracking
-          const currentFailures = (failureCounters.get(domain) || 0) + 1;
-          failureCounters.set(domain, currentFailures);
-
-          if (currentFailures >= 2) {
-            fallbackDomains.add(domain);
-          }
-          await updateSessionStorage();
-
+          const failures = (failureCounters.get(domain) ?? 0) + 1;
+          failureCounters.set(domain, failures);
+          if (failures >= 2) fallbackDomains.add(domain);
+          await persistSessionState();
           sendResponse({ success: false, error: err.message });
         }
       })();
-      return true; // Keep channel open
+      return true; // Keep message channel open for async sendResponse
+    }
 
     default:
       sendResponse({ success: false, error: `Unknown action: ${action}` });
@@ -273,8 +260,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// ─── Filename Normalization ────────────────────────────────────────────────
+
 /**
- * Clean and normalize downloaded filenames (mimics rename.ps1 logic)
+ * Clean and normalize a downloaded filename.
+ *
+ * Transformations applied (in order):
+ *   - Strip trailing duplicate-number suffixes e.g. " (2)"
+ *   - Remove bracket characters
+ *   - Extract leading EP range prefix (e.g. "EP.1.5." → "EP01-05")
+ *   - Strip DesireMovies branding and quality tags (10bit, hevc, hq, hd)
+ *   - Normalise "webdl" → "WEB-DL"
+ *   - Insert extracted EP range after the season token (S01 → "S01 EP01-05")
+ *   - Preserve audio channel dots (5.1, 7.1, etc.) via a _DOT_ placeholder
+ *     while replacing all other dots with spaces
+ *   - Strip non-alphanumeric characters (except hyphens and dots)
+ *   - Collapse whitespace and title-case every word
+ *
+ * @param {string} filename - Raw filename including extension.
+ * @returns {string} Cleaned filename.
  */
 function cleanFilename(filename) {
   const lastDotIdx = filename.lastIndexOf(".");
@@ -282,49 +286,59 @@ function cleanFilename(filename) {
 
   const ext = filename.slice(lastDotIdx);
   let baseName = filename.slice(0, lastDotIdx);
+  let episodeTag = "";
 
-  let ep = "";
-
-  // 1. Strip duplicate suffixes, brackets, and extract EP prefix
+  // 1. Remove trailing duplicate-file suffix and bracket characters.
   baseName = baseName
     .replace(/\s*\(\d+\)$/, "")
-    .replace(/[\[\]\(\)\{\}]/g, " ")
-    .replace(/^EP((\.\d+)+)\./i, (_, group) => {
-      const nums = group.split(".").filter(Boolean).map(Number);
-      const pad = (n) => String(n).padStart(2, "0");
-      ep = nums[0] === nums[nums.length - 1] 
-        ? `EP${pad(nums[0])}` 
-        : `EP${pad(nums[0])}-${pad(nums[nums.length - 1])}`;
-      return "";
-    });
+    .replace(/[\[\]\(\)\{\}]/g, " ");
 
-  // 2. Pro Pipeline: Clean, Normalize, and Format
+  // 2. Extract leading EP range (e.g. "EP.1.5." → episodeTag = "EP01-05").
+  baseName = baseName.replace(/^EP((\.\d+)+)\./i, (_, group) => {
+    const nums = group.split(".").filter(Boolean).map(Number);
+    const pad = (n) => String(n).padStart(2, "0");
+    const first = nums[0];
+    const last = nums[nums.length - 1];
+    episodeTag = first === last ? `EP${pad(first)}` : `EP${pad(first)}-${pad(last)}`;
+    return "";
+  });
+
+  // 3. Clean, normalise, and format the base name.
   const cleanName = baseName
+    // Remove site branding and common quality/codec tags.
     .replace(/[\-\s]*\bdesiremovies[\w\-\.]*\b|\b(10bits?|hevc|hq|hd)\b/gi, "")
+    // Normalise WEB-DL variants.
     .replace(/\bwebdl\b/gi, "WEB-DL")
-    .replace(/\b(S\d{2})\b/gi, ep ? `$1 ${ep}` : "$1")
-    .replace(/(5\.1|2\.0|7\.1|8\.1|2\.1)/g, m => m.replace(".", "_DOT_"))
+    // Inject the episode tag after the season token (e.g. S01 → "S01 EP01-05").
+    .replace(/\b(S\d{2})\b/gi, episodeTag ? `$1 ${episodeTag}` : "$1")
+    // Protect audio channel dots (5.1, 7.1 etc.) from the global dot→space step.
+    .replace(/(5\.1|2\.0|7\.1|8\.1|2\.1)/g, (m) => m.replace(".", "_DOT_"))
     .replace(/\./g, " ")
     .replace(/_DOT_/g, ".")
+    // Strip anything that isn't alphanumeric, a hyphen, or a dot.
     .replace(/[^a-zA-Z0-9\-\.]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
+    // Remove trailing hyphens or dots.
     .replace(/[\-\.]+$/, "")
+    // Title-case each word.
     .split(" ")
     .filter(Boolean)
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
   return cleanName + ext;
 }
 
-// Intercept downloads and apply cleaning rules to filenames before they are saved
+/**
+ * Intercept every download and suggest a cleaned filename.
+ * Falls back to the browser's default name if cleaning throws.
+ */
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   try {
-    const cleanName = cleanFilename(downloadItem.filename);
-    suggest({ filename: cleanName });
+    suggest({ filename: cleanFilename(downloadItem.filename) });
   } catch (err) {
-    console.error("[DM Automation] Error during filename suggestion:", err);
-    suggest(); // Fallback to default name if error occurs
+    console.error("[DM] Error cleaning filename:", err);
+    suggest(); // Let the browser use its default name.
   }
 });
