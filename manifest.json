@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DesireMovies Reimagined",
-  "version": "1.0.0",
-  "description": "Transforms DesireMovies into a modern streaming platform UI — Netflix-style grid, clean titles, quality badges, and glassmorphic design.",
+  "name": "DesireMovies Automation",
+  "version": "2.1.0",
+  "description": "Automates download links, performs headless bypassing for Gyanigurus, and cleanly renames downloaded files.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -16,23 +16,29 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "DesireMovies Reimagined"
+    "default_title": "DesireMovies Automation"
   },
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["storage", "alarms", "scripting", "webNavigation", "downloads"],
+  "permissions": ["downloads", "storage"],
   "host_permissions": [
     "<all_urls>"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://gyanigurus.xyz/*",
-        "https://fastcdn-dl.pages.dev/*"
+        "<all_urls>"
       ],
       "js": ["automation.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ]
 }

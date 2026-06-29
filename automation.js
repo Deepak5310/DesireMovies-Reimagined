@@ -1,10 +1,16 @@
-// DesireMovies Reimagined — Consolidated Automation Script
+// DesireMovies Automation — Consolidated Automation Script
 // Handles bypass, auto-clicks, and fallback logic based on the domain.
 
 (function () {
   "use strict";
 
   const host = window.location.hostname;
+  
+  // Quick exit if not a target domain
+  if (!host.includes("gyanigurus.xyz") && !host.includes("gdflix") && !host.includes("fastcdn-dl.pages.dev")) {
+    return;
+  }
+
   let done = false;
   let safetyTimeoutId = null;
   let observer = null;
@@ -72,7 +78,6 @@
       safetyTimeoutId = setTimeout(cleanup, 15000);
     }
 
-    // Only run if it's the top window, or run anyway as before.
     runGyanigurus();
   }
 
