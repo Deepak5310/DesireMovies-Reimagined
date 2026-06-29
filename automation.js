@@ -147,17 +147,32 @@
   else if (host.includes("fastcdn-dl.pages.dev") || host.includes("foxcloud.rest")) {
     function tryDownload() {
       if (completed) return true;
+
+      // FastCDN logic (#vd + #downloadbtn)
       const vd = document.querySelector("#vd");
       const btn = document.querySelector("#downloadbtn");
-      if (!vd || !btn) return false;
-
-      const href = vd.getAttribute("href");
-      if (href && href !== "#" && href.startsWith("http")) {
-        completed = true;
-        btn.click();
-        scheduleClose(5000);
-        return true;
+      if (vd && btn) {
+        const href = vd.getAttribute("href");
+        if (href && href !== "#" && href.startsWith("http")) {
+          completed = true;
+          btn.click();
+          scheduleClose(5000);
+          return true;
+        }
       }
+
+      // FoxCloud alternative logic (a.btn.btn-danger)
+      const foxBtn = document.querySelector("a.btn-danger");
+      if (foxBtn) {
+        const href = foxBtn.getAttribute("href");
+        if (href && href !== "#" && href.startsWith("http")) {
+          completed = true;
+          foxBtn.click();
+          scheduleClose(5000);
+          return true;
+        }
+      }
+
       return false;
     }
 
