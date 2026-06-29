@@ -202,7 +202,7 @@
     function tryGdflixOrUnlock() {
       // 1. Instant Regex search in full HTML (Find hidden SvelteKit state)
       const html = document.documentElement.innerHTML;
-      const match = html.match(/https?:\/\/[a-zA-Z0-9.\-]*gdflix\.[a-z]+\/[^\s"'\\]+/i);
+      const match = html.match(/https?:\/\/[a-zA-Z0-9.\-]*(gdflix|foxcloud|busycdn|fastcdn|gdtot)[a-zA-Z0-9.\-]*\/[^\s"'\\]+/i);
       if (match) {
         completed = true;
         let url = match[0].replace(/\\/g, ""); // Clean any JSON escapes
@@ -212,7 +212,7 @@
 
       // 2. DOM target already present
       const target =
-        document.querySelector('a[href*="gdflix"]') ||
+        document.querySelector('a[href*="gdflix"], a[href*="foxcloud"], a[href*="busycdn"], a[href*="fastcdn"], a[href*="gdtot"]') ||
         document.querySelector('img[alt*="gdflix"]')?.closest("button");
 
       if (target) {
@@ -223,21 +223,21 @@
         return true;
       }
 
-      // 3. Click "Unlock Links" aggressively
+      // 3. Click "Unlock Links" safely (don't spam it 20 times a second)
       if (!unlocked) {
         for (const btn of document.querySelectorAll("button")) {
           if (UNLOCK_RE.test(btn.textContent)) {
             unlocked = true;
-            // SvelteKit hydration can delay event listeners. Click every 200ms until it works.
+            // SvelteKit needs time. Click once every 1 second to avoid spamming the API.
             let clicks = 0;
             const interval = setInterval(() => {
               clicks++;
-              if (document.body.contains(btn) && clicks < 20) {
+              if (document.body.contains(btn) && clicks <= 5) {
                 btn.click();
               } else {
                 clearInterval(interval);
               }
-            }, 200);
+            }, 1000);
             break;
           }
         }
