@@ -177,10 +177,23 @@
         }
         targetElement.click();
         cleanup();
-        // If it opens a new tab (like the button usually does), close this tab after a short delay
-        setTimeout(() => {
+        
+        // Wait for the new tab to open (this tab becomes hidden) before closing
+        let closed = false;
+        const doClose = () => {
+          if (closed) return;
+          closed = true;
           chrome.runtime.sendMessage({ action: "close_tab" });
-        }, 500);
+        };
+        
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === 'hidden') {
+            doClose();
+          }
+        });
+        
+        // Fallback timeout just in case
+        setTimeout(doClose, 4000);
         return true;
       }
 
