@@ -141,10 +141,10 @@
     }
   }
 
-  // ─── FastCDN ───────────────────────────────────────────────────────────────
+  // ─── FastCDN / FoxCloud ────────────────────────────────────────────────────
   // Wait for #vd href to resolve → click #downloadbtn → close after 5s.
 
-  else if (host.includes("fastcdn-dl.pages.dev")) {
+  else if (host.includes("fastcdn-dl.pages.dev") || host.includes("foxcloud.rest")) {
     function tryDownload() {
       if (completed) return true;
       const vd = document.querySelector("#vd");

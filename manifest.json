@@ -27,7 +27,8 @@
     "*://*.gdflix.io/*",
     "*://*.gdflix.dev/*",
     "*://*.busycdn.xyz/*",
-    "*://*.fastcdn-dl.pages.dev/*"
+    "*://*.fastcdn-dl.pages.dev/*",
+    "*://*.foxcloud.rest/*"
   ],
   "content_scripts": [
     {
@@ -35,21 +36,14 @@
         "*://*.gyanigurus.xyz/*",
         "*://*.gdflix.io/*",
         "*://*.fastcdn-dl.pages.dev/*",
+        "*://*.foxcloud.rest/*",
         "*://*.kmhd.eu/*"
       ],
       "js": ["automation.js"],
       "run_at": "document_start"
     },
     {
-      "matches": [
-        "*://*.1desiremovies.dad/*",
-        "*://*.katmoviehd.top/*",
-        "*://*.katmoviehd.vip/*",
-        "*://*.katmoviehd.re/*",
-        "*://katmoviehd.top/*",
-        "*://katmoviehd.vip/*",
-        "*://katmoviehd.re/*"
-      ],
+      "matches": ["*://*.1desiremovies.dad/*", "*://*.katmoviehd.top/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
