@@ -2,12 +2,11 @@
  * content.js — Content Script (document_idle)
  *
  * Injected only into DesireMovies and KatMovieHD pages.
- * Intercepts clicks on Gyanigurus bypass links, performs a headless bypass
- * via the background service worker, and opens the resolved GDFlix URL
- * in a background tab — avoiding a visible redirect.
+ * Intercepts clicks on Gyanigurus download links and sends them to the
+ * background service worker for fully headless resolution:
  *
- * GDFlix links are NOT intercepted here; they're handled by automation.js
- * once the GDFlix tab opens.
+ *   Primary:  full_bypass → resolves entire chain → download starts directly
+ *   Fallback: bypass_gyanigurus → opens GDFlix tab (automation.js handles the rest)
  */
 
 (function () {
@@ -36,14 +35,14 @@
 
   // ─── UI Feedback ───────────────────────────────────────────────────────────
 
-  /** Show a "bypassing" spinner and return a function to restore the link. */
-  function showSpinner(anchor) {
+  /** Show a status indicator on the link. Returns a restore function. */
+  function showStatus(anchor, text) {
     const saved = {
       html: anchor.innerHTML,
       pointerEvents: anchor.style.pointerEvents,
       cursor: anchor.style.cursor,
     };
-    anchor.innerHTML = `<span style="opacity:0.8">⏳ Bypassing…</span>`;
+    anchor.innerHTML = `<span style="opacity:0.8">${text}</span>`;
     anchor.style.pointerEvents = "none";
     anchor.style.cursor = "wait";
 
@@ -66,20 +65,32 @@
     e.preventDefault();
     e.stopPropagation();
 
-    const restore = showSpinner(anchor);
+    const restore = showStatus(anchor, "⏳ Bypassing…");
 
     try {
-      const res = await sendBg("bypass_gyanigurus", { url: href });
-      const targetUrl = res?.success && res.gdflixUrl ? res.gdflixUrl : href;
+      // Primary path: fully headless — no tabs at all.
+      const res = await sendBg("full_bypass", { url: href });
 
-      if (!res?.success) {
-        console.warn("[DM] Headless bypass failed, opening directly:", res?.error);
+      if (res?.success) {
+        // Download started directly by the service worker.
+        showStatus(anchor, "✅ Download started");
+        setTimeout(restore, 3000);
+        return;
       }
+
+      // full_bypass failed — fall back to tab-based approach.
+      console.warn("[DM] Full bypass failed, falling back to tab:", res?.error);
+
+      const fallback = await sendBg("bypass_gyanigurus", { url: href });
+      const targetUrl = fallback?.success && fallback.gdflixUrl
+        ? fallback.gdflixUrl
+        : href;
 
       await sendBg("open_background_tab", { url: targetUrl });
     } catch (err) {
-      console.warn("[DM] Bypass error, opening directly:", err.message);
-      await sendBg("open_background_tab", { url: href });
+      // Everything failed — open the original link directly.
+      console.warn("[DM] All bypass paths failed:", err.message);
+      await sendBg("open_background_tab", { url: href }).catch(() => {});
     } finally {
       setTimeout(restore, 2000);
     }

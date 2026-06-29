@@ -22,7 +22,13 @@
     "service_worker": "background.js"
   },
   "permissions": ["downloads", "storage"],
-  "host_permissions": ["*://*.gyanigurus.xyz/*"],
+  "host_permissions": [
+    "*://*.gyanigurus.xyz/*",
+    "*://*.gdflix.io/*",
+    "*://*.gdflix.dev/*",
+    "*://*.busycdn.xyz/*",
+    "*://*.fastcdn-dl.pages.dev/*"
+  ],
   "content_scripts": [
     {
       "matches": [

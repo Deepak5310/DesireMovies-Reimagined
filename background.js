@@ -2,9 +2,10 @@
  * background.js — Service Worker
  *
  * Responsibilities:
- *   1. Headless bypass: fetches Gyanigurus pages, submits the hidden form,
- *      and extracts the GDFlix URL without navigating the user's tab.
- *   2. Tab management: opens background tabs, closes automation tabs.
+ *   1. Full headless bypass: resolves the entire download chain
+ *      (Gyanigurus → GDFlix → BusyCDN → final URL) without opening any tabs,
+ *      then triggers chrome.downloads.download() directly.
+ *   2. Tab management: opens background tabs, closes automation tabs (fallback).
  *   3. Filename normalization: cleans every Chrome download filename.
  */
 
@@ -15,7 +16,7 @@
 /** Deduplication: url → in-flight bypass Promise. */
 const activeBypasses = new Map();
 
-/** Cache: source url → resolved GDFlix url. */
+/** Cache: gyanigurus url → final download url. */
 const bypassCache = new Map();
 
 /** Consecutive failure count per hostname. */
@@ -71,6 +72,13 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
   }
 }
 
+/** Fetch page HTML as text. Throws on non-OK status. */
+async function fetchHTML(url) {
+  const res = await fetchWithTimeout(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${new URL(url).hostname}`);
+  return res.text();
+}
+
 // ─── Security ──────────────────────────────────────────────────────────────
 
 /** True only for http/https URLs. */
@@ -90,61 +98,77 @@ function isAllowedBypassUrl(url) {
   return h === "gyanigurus.xyz" || h.endsWith(".gyanigurus.xyz");
 }
 
-// ─── Headless Bypass ───────────────────────────────────────────────────────
+// ─── Headless Bypass — Full Chain ──────────────────────────────────────────
 
 const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"']*gdflix[^"']*)['"]/i;
+const INSTANT_DL_RE = /href=["'](https?:\/\/instant\.busycdn\.xyz\/[^"']+)['"]/i;
 
 /**
- * Fetch a Gyanigurus page, submit its hidden form, and extract the GDFlix URL.
+ * Resolve the ENTIRE download chain headlessly:
  *
- * Strategy:
- *   GET  → check if GDFlix href already present (some pages skip the POST)
- *   POST → submit hidden form fields → extract GDFlix href from response
+ *   1. GET Gyanigurus page → extract GDFlix URL
+ *   2. GET GDFlix page → extract "Instant DL" busycdn URL
+ *   3. fetch(busycdn, redirect:manual) → read Location header
+ *      → parse ?url= param → final Google download URL
+ *
+ * @param {string} url - A validated Gyanigurus URL.
+ * @returns {Promise<{ success: true, downloadUrl: string }>}
  */
-async function performBypass(url) {
+async function resolveFullChain(url) {
   await ready;
 
   if (bypassCache.has(url)) {
-    return { success: true, gdflixUrl: bypassCache.get(url) };
+    return { success: true, downloadUrl: bypassCache.get(url) };
   }
 
   const domain = new URL(url).hostname;
 
-  // Step 1: GET landing page
-  const res1 = await fetchWithTimeout(url);
-  if (!res1.ok) throw new Error(`HTTP ${res1.status} on GET`);
-  const html1 = await res1.text();
-
+  // Step 1: Gyanigurus → GDFlix URL
+  const html1 = await fetchHTML(url);
   let match = html1.match(GDFLIX_HREF_RE);
-  if (match) return cacheResult(url, domain, match[1]);
-
-  // Step 2: Extract hidden form fields
-  const doc = new DOMParser().parseFromString(html1, "text/html");
-  const body = new URLSearchParams();
-  for (const el of doc.querySelectorAll('input[type="hidden"][name]')) {
-    body.append(el.name, el.value ?? "");
+  if (!match) {
+    // Try POST with hidden form fields (some pages need this)
+    const doc = new DOMParser().parseFromString(html1, "text/html");
+    const body = new URLSearchParams();
+    for (const el of doc.querySelectorAll('input[type="hidden"][name]')) {
+      body.append(el.name, el.value ?? "");
+    }
+    const res2 = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!res2.ok) throw new Error(`HTTP ${res2.status} on Gyanigurus POST`);
+    match = (await res2.text()).match(GDFLIX_HREF_RE);
   }
+  if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
 
-  // Step 3: POST
-  const res2 = await fetchWithTimeout(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  if (!res2.ok) throw new Error(`HTTP ${res2.status} on POST`);
+  const gdflixUrl = match[1];
+  console.log("[DM] Step 1 done: GDFlix URL →", gdflixUrl);
 
-  match = (await res2.text()).match(GDFLIX_HREF_RE);
-  if (match) return cacheResult(url, domain, match[1]);
+  // Step 2: GDFlix → "Instant DL" busycdn URL
+  const html2 = await fetchHTML(gdflixUrl);
+  const instantMatch = html2.match(INSTANT_DL_RE);
+  if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
 
-  throw new Error("GDFlix link not found in response");
-}
+  const busycdnUrl = instantMatch[1];
+  console.log("[DM] Step 2 done: BusyCDN URL →", busycdnUrl.slice(0, 60) + "…");
 
-/** Cache a resolved bypass and reset the failure counter. */
-function cacheResult(sourceUrl, domain, gdflixUrl) {
-  bypassCache.set(sourceUrl, gdflixUrl);
+  // Step 3: BusyCDN 302 → follows redirect to FastCDN → extract ?url= from final URL
+  // NOTE: redirect:"manual" returns opaque response in service workers (can't read
+  // Location header). Instead, let fetch follow the redirect and read response.url.
+  const redirectRes = await fetchWithTimeout(busycdnUrl);
+  const finalUrl = new URL(redirectRes.url).searchParams.get("url");
+  if (!finalUrl) throw new Error("No ?url= param in redirect destination");
+
+  console.log("[DM] Step 3 done: Final URL →", finalUrl.slice(0, 80) + "…");
+
+  // Cache the final download URL
+  bypassCache.set(url, finalUrl);
   failureCounts.set(domain, 0);
   persistState();
-  return { success: true, gdflixUrl };
+
+  return { success: true, downloadUrl: finalUrl };
 }
 
 // ─── Message Handler ───────────────────────────────────────────────────────
@@ -162,7 +186,11 @@ const actions = {
     return { success: true };
   },
 
-  async bypass_gyanigurus({ url }) {
+  /**
+   * Full headless bypass: resolves entire chain and triggers download directly.
+   * No tabs opened at all.
+   */
+  async full_bypass({ url }) {
     if (!url) return { success: false, error: "Missing URL" };
     if (!isAllowedBypassUrl(url)) {
       return { success: false, error: "URL not in bypass allowlist" };
@@ -178,18 +206,64 @@ const actions = {
     // Deduplicate concurrent requests for the same URL.
     let promise = activeBypasses.get(url);
     if (!promise) {
-      promise = performBypass(url);
+      promise = resolveFullChain(url);
       activeBypasses.set(url, promise);
       promise.finally(() => activeBypasses.delete(url));
     }
 
     try {
-      return await promise;
+      const result = await promise;
+
+      // Trigger the download directly from the service worker.
+      chrome.downloads.download({ url: result.downloadUrl });
+      console.log("[DM] Download triggered directly — zero tabs opened.");
+
+      return { success: true, downloadStarted: true };
     } catch (err) {
       const count = (failureCounts.get(domain) ?? 0) + 1;
       failureCounts.set(domain, count);
       if (count >= 2) fallbackDomains.add(domain);
       persistState();
+      console.warn("[DM] Full bypass failed:", err.message);
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Legacy bypass: resolves only to GDFlix URL (for tab-based fallback).
+   */
+  async bypass_gyanigurus({ url }) {
+    if (!url) return { success: false, error: "Missing URL" };
+    if (!isAllowedBypassUrl(url)) {
+      return { success: false, error: "URL not in bypass allowlist" };
+    }
+
+    await ready;
+    const domain = new URL(url).hostname;
+
+    if (fallbackDomains.has(domain)) {
+      return { success: false, fallback: true, error: "Domain flagged for fallback" };
+    }
+
+    try {
+      const html = await fetchHTML(url);
+      let match = html.match(GDFLIX_HREF_RE);
+      if (!match) {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const body = new URLSearchParams();
+        for (const el of doc.querySelectorAll('input[type="hidden"][name]')) {
+          body.append(el.name, el.value ?? "");
+        }
+        const res = await fetchWithTimeout(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        if (res.ok) match = (await res.text()).match(GDFLIX_HREF_RE);
+      }
+      if (match) return { success: true, gdflixUrl: match[1] };
+      throw new Error("GDFlix link not found");
+    } catch (err) {
       return { success: false, error: err.message };
     }
   },

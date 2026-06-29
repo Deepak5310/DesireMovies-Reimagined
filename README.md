@@ -1,29 +1,38 @@
 # DesireMovies Bypass
 
-A Chrome MV3 extension that automates multi-hop download bypasses on DesireMovies and KatMovieHD and cleans every downloaded filename.
+A Chrome MV3 extension that automates multi-hop download bypasses on DesireMovies and KatMovieHD. Resolves the entire download chain headlessly — **zero tabs opened, download starts directly**.
 
 ---
 
 ## How It Works
 
-When you click a download link on DesireMovies or KatMovieHD, several redirect pages normally require manual interaction. This extension automates all of them:
+When you click a download link on DesireMovies, several redirect pages normally require manual interaction. This extension resolves everything in the background:
+
+### Primary Path (Zero Tabs — ~2-3 seconds)
 
 ```
-DesireMovies / KatMovieHD page
-  └─ content.js intercepts the Gyanigurus link click
-       └─ background.js fetches the page headlessly and extracts the GDFlix URL
-            └─ automation.js (GDFlix tab) clicks "Instant DL"
-                 └─ automation.js (FastCDN tab) waits for the download link, clicks it, closes the tab
+Click download link on DesireMovies
+  └─ content.js intercepts the click
+       └─ background.js resolves the ENTIRE chain headlessly:
+            1. GET Gyanigurus page → extract GDFlix URL
+            2. GET GDFlix page → extract "Instant DL" (BusyCDN) URL
+            3. fetch(BusyCDN, no-redirect) → read Location header → parse ?url= param
+            4. chrome.downloads.download(finalUrl) → ✅ Download starts directly
 ```
 
-For KMHD pages, the chain starts with an "Unlock Links" button instead:
+No tabs open. No visible redirects. Download just starts.
+
+### Fallback Path (Tab-Based)
+
+If the headless chain fails (e.g. Cloudflare challenge, page structure change):
 
 ```
-automation.js (KMHD tab) clicks "Unlock Links" → clicks GDFlix link → closes tab
-  └─ (same GDFlix → FastCDN chain)
+content.js falls back to opening a GDFlix tab
+  └─ automation.js (GDFlix) clicks "Instant DL"
+       └─ automation.js (FastCDN) waits, clicks download, closes tab
 ```
 
-Every file downloaded through Chrome is also automatically renamed by the filename cleaner.
+For KMHD pages, automation.js handles "Unlock Links" → GDFlix → FastCDN.
 
 ---
 
@@ -31,19 +40,19 @@ Every file downloaded through Chrome is also automatically renamed by the filena
 
 | Feature | Description |
 |---|---|
-| **Headless bypass** | Gyanigurus pages are fetched in the background — no redirect tab shown |
-| **Auto-click chain** | Clicks through GDFlix "Instant DL" and FastCDN "Download Here" automatically |
-| **KMHD support** | Unlocks links and navigates the GDFlix flow from KatMovieHD pages |
+| **Zero-tab download** | Entire chain resolved headlessly — download starts directly via `chrome.downloads` |
+| **~2-3s total** | Three sequential fetches vs. opening/closing multiple tabs |
+| **Automatic fallback** | Falls back to tab-based flow if headless fails |
 | **Filename cleaning** | Strips branding, quality tags, dot-spacing; standardizes episode format |
-| **Bypass cache** | Caches resolved GDFlix URLs per session to skip redundant requests |
-| **Fallback handling** | Opens links directly if headless bypass fails twice for a domain |
-| **Self-closing tabs** | Automation tabs close themselves after completing their step |
+| **Bypass cache** | Caches resolved download URLs per session |
+| **KMHD support** | Unlocks links and navigates the GDFlix flow |
+| **Self-closing tabs** | Fallback automation tabs close themselves |
 
 ---
 
 ## Installation
 
-> This extension is not on the Chrome Web Store. Load it as an unpacked extension.
+> Not on the Chrome Web Store. Load as unpacked.
 
 ```bash
 git clone https://github.com/Deepak5310/DesireMovies-Reimagined.git
@@ -52,7 +61,7 @@ git clone https://github.com/Deepak5310/DesireMovies-Reimagined.git
 1. Open `chrome://extensions`
 2. Enable **Developer Mode** (top-right toggle)
 3. Click **Load unpacked** and select the cloned directory
-4. Visit a DesireMovies or KatMovieHD page and click any download link
+4. Visit a DesireMovies page and click any download link
 
 ---
 
@@ -60,9 +69,9 @@ git clone https://github.com/Deepak5310/DesireMovies-Reimagined.git
 
 No configuration required. Once loaded:
 
-- **DesireMovies / KatMovieHD** — Click any Gyanigurus download link. The extension bypasses it in the background and opens the GDFlix tab automatically.
-- **GDFlix** — Auto-clicks "Instant DL".
-- **FastCDN** — Waits for the download link, clicks it, closes the tab.
+- **DesireMovies** — Click any download link. You'll see "⏳ Bypassing…" then "✅ Download started". No tabs open.
+- **GDFlix / FastCDN** — If opened manually or via fallback, automation.js handles clicks automatically.
+- **KMHD** — Unlock buttons are clicked automatically.
 - **Downloads** — All filenames are automatically cleaned.
 
 ### Filename Examples
@@ -79,11 +88,13 @@ No configuration required. Once loaded:
 
 | Permission | Reason |
 |---|---|
-| `downloads` | Intercepts `onDeterminingFilename` to clean filenames |
-| `storage` | Persists bypass cache and failure counters across service-worker restarts |
-| `*://*.gyanigurus.xyz/*` | Host permission for headless `fetch()` to Gyanigurus pages |
+| `downloads` | `onDeterminingFilename` for filename cleaning + `chrome.downloads.download()` for direct downloads |
+| `storage` | Persists bypass cache across service-worker restarts |
+| `*://*.gyanigurus.xyz/*` | Headless fetch to extract GDFlix URL |
+| `*://*.gdflix.io/*`, `*://*.gdflix.dev/*` | Headless fetch to extract Instant DL URL |
+| `*://*.busycdn.xyz/*` | Read 302 redirect to extract final download URL |
 
-> **Note:** Content scripts are injected only on specific target domains (DesireMovies, KatMovieHD, Gyanigurus, GDFlix, FastCDN, KMHD). No scripts run on unrelated pages. The `tabs` permission is not required — `chrome.tabs.create` and `chrome.tabs.remove` work without it.
+> Content scripts inject only on specific target domains. No scripts run on unrelated pages.
 
 ---
 
@@ -91,65 +102,47 @@ No configuration required. Once loaded:
 
 ```
 DesireMovies-Reimagined/
-├── manifest.json     — MV3 manifest with domain-scoped content scripts
-├── background.js     — Service worker: headless bypass, tab ops, filename cleaning
-├── automation.js     — Content script (document_start): auto-clicks on bypass pages
-├── content.js        — Content script (document_idle): intercepts links on source pages
+├── manifest.json     — MV3 manifest with domain-scoped permissions
+├── background.js     — Service worker: full chain bypass, tab ops, filename cleaning
+├── automation.js     — Content script (document_start): fallback auto-clicks
+├── content.js        — Content script (document_idle): intercepts download clicks
 └── icons/
-    ├── icon16.png
-    ├── icon32.png
-    ├── icon48.png
-    └── icon128.png
 ```
 
 ### Script Matrix
 
-| Script | Sites | Timing | Purpose |
-|---|---|---|---|
-| `automation.js` | Gyanigurus, GDFlix, FastCDN, KMHD | `document_start` | DOM auto-clicks and tab closing |
-| `content.js` | DesireMovies, KatMovieHD | `document_idle` | Intercept download links, trigger headless bypass |
-| `background.js` | Service Worker | — | Headless bypass, tab management, filename cleaning |
+| Script | Sites | Purpose |
+|---|---|---|
+| `content.js` | DesireMovies, KatMovieHD | Intercepts download clicks → triggers full headless bypass |
+| `background.js` | Service Worker | Resolves entire chain, triggers direct download, cleans filenames |
+| `automation.js` | Gyanigurus, GDFlix, FastCDN, KMHD | Fallback: DOM auto-clicks when tabs are opened |
 
 ---
 
 ## Adding New Domains
 
-Target sites frequently change TLDs. To add a new domain:
+Target sites change TLDs frequently:
 
-1. Add a match pattern to the appropriate `content_scripts` entry in `manifest.json`
-2. If the site is a new bypass source (like Gyanigurus), also add it to `host_permissions`
-3. If needed, update the `isAllowedBypassUrl` allowlist in `background.js`
+1. Add match patterns to `content_scripts` in `manifest.json`
+2. For new bypass sources, add to `host_permissions`
+3. Update `isAllowedBypassUrl` allowlist in `background.js`
 
 ---
 
 ## Limitations
 
-- **TLD changes** — Sites change TLDs frequently. Update match patterns in `manifest.json` when they do.
-- **Page structure changes** — If a bypass site changes its button IDs or layout, update the selectors in `automation.js`.
-- **Cloudflare challenges** — Headless `fetch()` can't execute JavaScript, so CF-protected pages fall back to direct navigation.
-- **Service worker restarts** — Chrome may terminate the SW at any time. Session cache is restored, but in-flight bypasses are lost.
-
----
-
-## Troubleshooting
-
-**Spinner shows but nothing opens** — Headless bypass failed. Check DevTools → Extensions → Service Worker for `[DM]` errors. The fallback should open the link directly.
-
-**GDFlix "Instant DL" not clicked** — Button text may have changed. Inspect the page and update `INSTANT_DL_RE` in `automation.js`.
-
-**FastCDN tab doesn't close** — The `#downloadbtn` or `#vd` selectors may have changed. Inspect and update.
-
-**KMHD unlock not working** — Increase the hydration delay (`1500` ms) in the KMHD block of `automation.js`.
-
-**Filenames not cleaned** — Verify the extension has the `downloads` permission and Chrome ≥ 83.
+- **TLD changes** — Update match patterns in `manifest.json` when sites move
+- **Page structure changes** — If GDFlix removes the "Instant DL" link or BusyCDN changes its redirect, the headless chain breaks (falls back to tab-based)
+- **Cloudflare challenges** — Headless fetch can't execute JS challenges
+- **SW restarts** — Session cache restores, but in-flight bypasses are lost
 
 ---
 
 ## Security
 
-- Headless bypass is restricted to `gyanigurus.xyz` via the `isAllowedBypassUrl` allowlist
-- Content scripts only inject on explicitly listed domains — not on all pages
-- No data is sent to any external server
+- Headless bypass restricted to `gyanigurus.xyz` via allowlist
+- Content scripts inject only on listed domains
+- No data sent to external servers
 
 ---
 
