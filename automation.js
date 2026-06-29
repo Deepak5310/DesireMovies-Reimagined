@@ -191,17 +191,26 @@
     }
   }
 
-  // ─── KMHD ─────────────────────────────────────────────────────────────────
-  // Click "Unlock Links" (with SvelteKit hydration delay) → click GDFlix → close.
+  // ─── KMHD ──────────────────────────────────────────────────────────────────
+  // SvelteKit site. Try to extract URL from source directly to skip button.
+  // Otherwise, click "Unlock Links".
 
   else if (host.includes("kmhd")) {
     const UNLOCK_RE = /unlock\s*links|click\s*to\s*unlock/i;
     let unlocked = false;
 
     function tryGdflixOrUnlock() {
-      if (completed) return true;
+      // 1. Instant Regex search in full HTML (Find hidden SvelteKit state)
+      const html = document.documentElement.innerHTML;
+      const match = html.match(/https?:\/\/[a-zA-Z0-9.\-]*gdflix\.[a-z]+\/[^\s"'\\]+/i);
+      if (match) {
+        completed = true;
+        let url = match[0].replace(/\\/g, ""); // Clean any JSON escapes
+        window.location.href = url;
+        return true;
+      }
 
-      // Priority: GDFlix link or image-button already in DOM.
+      // 2. DOM target already present
       const target =
         document.querySelector('a[href*="gdflix"]') ||
         document.querySelector('img[alt*="gdflix"]')?.closest("button");
@@ -210,16 +219,25 @@
         completed = true;
         if (target.tagName === "A") target.target = "_self";
         target.click();
-        scheduleCloseOnHidden();
+        scheduleClose(10_000);
         return true;
       }
 
-      // Otherwise try the unlock button (1.5s delay for SvelteKit hydration).
+      // 3. Click "Unlock Links" aggressively
       if (!unlocked) {
         for (const btn of document.querySelectorAll("button")) {
           if (UNLOCK_RE.test(btn.textContent)) {
             unlocked = true;
-            setTimeout(() => btn.click(), 1500);
+            // SvelteKit hydration can delay event listeners. Click every 200ms until it works.
+            let clicks = 0;
+            const interval = setInterval(() => {
+              clicks++;
+              if (document.body.contains(btn) && clicks < 20) {
+                btn.click();
+              } else {
+                clearInterval(interval);
+              }
+            }, 200);
             break;
           }
         }
