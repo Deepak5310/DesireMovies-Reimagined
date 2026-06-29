@@ -1,65 +1,56 @@
-// content.js — DesireMovies Automation
-// Injected into DesireMovies and KatMovieHD pages.
-//
-// Intercepts clicks on Gyanigurus bypass links and performs a headless bypass
-// (GET + POST via background service worker) to extract the GDFlix URL directly,
-// avoiding a visible redirect through the Gyanigurus page.
-//
-// GDFlix links are intentionally NOT intercepted here — they are handled
-// by automation.js once the GDFlix tab is open.
+/**
+ * content.js — Content Script (document_idle)
+ *
+ * Injected only into DesireMovies and KatMovieHD pages.
+ * Intercepts clicks on Gyanigurus bypass links, performs a headless bypass
+ * via the background service worker, and opens the resolved GDFlix URL
+ * in a background tab — avoiding a visible redirect.
+ *
+ * GDFlix links are NOT intercepted here; they're handled by automation.js
+ * once the GDFlix tab opens.
+ */
 
 (function () {
   "use strict";
 
-  const host = window.location.hostname;
-  if (!host.includes("desiremovies") && !host.includes("katmoviehd")) return;
+  // Defense-in-depth: manifest already limits injection to target domains.
+  const { hostname } = location;
+  if (!hostname.includes("desiremovies") && !hostname.includes("katmoviehd")) return;
 
   // ─── Messaging ─────────────────────────────────────────────────────────────
 
-  /**
-   * Send a message to the background service worker and return a Promise.
-   *
-   * @param {string} action
-   * @param {object} [payload]
-   * @returns {Promise<object>}
-   */
-  function sendBgMessage(action, payload = {}) {
+  /** Send a message to the background service worker. */
+  function sendBg(action, payload = {}) {
     return new Promise((resolve, reject) => {
       try {
-        chrome.runtime.sendMessage({ action, payload }, (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            resolve(response);
-          }
+        chrome.runtime.sendMessage({ action, payload }, (res) => {
+          chrome.runtime.lastError
+            ? reject(new Error(chrome.runtime.lastError.message))
+            : resolve(res);
         });
-      } catch (err) {
-        reject(err);
+      } catch (e) {
+        reject(e);
       }
     });
   }
 
-  // ─── UI State Helpers ──────────────────────────────────────────────────────
+  // ─── UI Feedback ───────────────────────────────────────────────────────────
 
-  /**
-   * Show a "bypassing" spinner on the clicked link and return a reset function.
-   *
-   * @param {HTMLAnchorElement} anchor
-   * @returns {() => void} Call this to restore the original link state.
-   */
-  function showBypassingState(anchor) {
-    const originalHTML = anchor.innerHTML;
-    const originalPointerEvents = anchor.style.pointerEvents;
-    const originalCursor = anchor.style.cursor;
-
+  /** Show a "bypassing" spinner and return a function to restore the link. */
+  function showSpinner(anchor) {
+    const saved = {
+      html: anchor.innerHTML,
+      pointerEvents: anchor.style.pointerEvents,
+      cursor: anchor.style.cursor,
+    };
     anchor.innerHTML = `<span style="opacity:0.8">⏳ Bypassing…</span>`;
     anchor.style.pointerEvents = "none";
     anchor.style.cursor = "wait";
 
     return () => {
-      anchor.innerHTML = originalHTML;
-      anchor.style.pointerEvents = originalPointerEvents;
-      anchor.style.cursor = originalCursor;
+      anchor.innerHTML = saved.html;
+      anchor.style.pointerEvents = saved.pointerEvents;
+      anchor.style.cursor = saved.cursor;
     };
   }
 
@@ -70,32 +61,27 @@
     if (!anchor) return;
 
     const href = anchor.getAttribute("href");
-
-    // Only intercept Gyanigurus links. GDFlix links open directly through
-    // automation.js in the new tab — no headless bypass needed here.
-    if (!href || !href.includes("gyanigurus")) return;
+    if (!href?.includes("gyanigurus")) return;
 
     e.preventDefault();
     e.stopPropagation();
 
-    const restoreLink = showBypassingState(anchor);
+    const restore = showSpinner(anchor);
 
     try {
-      const response = await sendBgMessage("bypass_gyanigurus", { url: href });
-      const targetUrl = (response?.success && response.gdflixUrl) ? response.gdflixUrl : href;
+      const res = await sendBg("bypass_gyanigurus", { url: href });
+      const targetUrl = res?.success && res.gdflixUrl ? res.gdflixUrl : href;
 
-      if (!response?.success) {
-        console.warn("[DM] Headless bypass failed, falling back to direct open:", response?.error);
+      if (!res?.success) {
+        console.warn("[DM] Headless bypass failed, opening directly:", res?.error);
       }
 
-      await sendBgMessage("open_background_tab", { url: targetUrl });
+      await sendBg("open_background_tab", { url: targetUrl });
     } catch (err) {
-      console.warn("[DM] Bypass error, falling back to direct open:", err.message);
-      await sendBgMessage("open_background_tab", { url: href });
+      console.warn("[DM] Bypass error, opening directly:", err.message);
+      await sendBg("open_background_tab", { url: href });
     } finally {
-      // Restore link after a short delay (user may still be on this page).
-      setTimeout(restoreLink, 2000);
+      setTimeout(restore, 2000);
     }
   });
-
 })();
