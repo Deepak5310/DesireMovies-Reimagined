@@ -13,7 +13,7 @@
   // ─── Shared Utilities ──────────────────────────────────────────────────────
 
   const OBSERVER_CONFIG = { childList: true, subtree: true };
-  const SAFETY_TIMEOUT_MS = 15_000;
+  const SAFETY_TIMEOUT_MS = 30_000;
 
   let completed = false;
   let timeoutId = null;
@@ -25,6 +25,13 @@
     observer = null;
     clearTimeout(timeoutId);
     timeoutId = null;
+  }
+
+  /** Triggered when the safety timeout expires — prevents hanging tabs. */
+  function safetyClose() {
+    console.warn("[DM] Safety timeout reached. Closing hanging tab.");
+    cleanup();
+    chrome.runtime.sendMessage({ action: "close_tab" });
   }
 
   /** Send close_tab to the background worker after `ms` milliseconds. */
@@ -80,7 +87,7 @@
     };
     observer = new MutationObserver(debounced);
     observer.observe(document.documentElement, config);
-    timeoutId = setTimeout(cleanup, SAFETY_TIMEOUT_MS);
+    timeoutId = setTimeout(safetyClose, SAFETY_TIMEOUT_MS);
   }
 
   // ─── Gyanigurus ────────────────────────────────────────────────────────────
