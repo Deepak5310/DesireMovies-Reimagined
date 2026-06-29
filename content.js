@@ -14,7 +14,20 @@
 
   // Defense-in-depth: manifest already limits injection to target domains.
   const { hostname } = location;
-  if (!hostname.includes("desiremovies") && !hostname.includes("katmoviehd")) return;
+  // Let it run anywhere it's injected, since it might be dynamically injected via options page.
+
+  let dynamicBypassDomains = [];
+  chrome.storage.local.get(["dynamicDomains"], (data) => {
+    if (data.dynamicDomains?.bypass) {
+      dynamicBypassDomains = data.dynamicDomains.bypass.map(p => p.replace(/^\*:\/\/(?:\*\.)?/, "").replace(/\/\*$/, ""));
+    }
+  });
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.dynamicDomains) {
+      const bypass = changes.dynamicDomains.newValue?.bypass || [];
+      dynamicBypassDomains = bypass.map(p => p.replace(/^\*:\/\/(?:\*\.)?/, "").replace(/\/\*$/, ""));
+    }
+  });
 
   // ─── Messaging ─────────────────────────────────────────────────────────────
 
@@ -63,7 +76,7 @@
     if (!href) return;
 
     const isGyanigurus = href.includes("gyanigurus");
-    const isKmhd = href.includes("links.kmhd.eu");
+    const isKmhd = href.includes("links.kmhd.eu") || dynamicBypassDomains.some(d => href.includes(d));
 
     if (!isGyanigurus && !isKmhd) return;
 

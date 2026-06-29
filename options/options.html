@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DesireMovies Bypass - Settings</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --border: #334155;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      max-width: 600px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    p.desc {
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    h2 {
+      font-size: 18px;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .input-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus {
+      border-color: var(--primary);
+    }
+    button {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button.primary {
+      background: var(--primary);
+      color: white;
+    }
+    button.primary:hover {
+      background: var(--primary-hover);
+    }
+    button.danger {
+      background: var(--danger);
+      color: white;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    button.danger:hover {
+      background: var(--danger-hover);
+    }
+    .domain-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .domain-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+    .status.error {
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      display: block;
+    }
+    .status.success {
+      background: rgba(59, 130, 246, 0.1);
+      color: #93c5fd;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Settings</h1>
+    <p class="desc">
+      Movie sites frequently change their domains (e.g. .dad to .top). 
+      Use this page to grant permissions for new domains without waiting for an extension update.
+    </p>
+
+    <div id="statusMessage" class="status"></div>
+
+    <div class="card">
+      <h2>1. Movie Source Domains</h2>
+      <p class="desc" style="margin-bottom: 16px;">
+        Add domains where you browse movies (e.g. <code>*://*.new-desire.com/*</code>). 
+        This allows the extension to intercept download clicks.
+      </p>
+      <div class="input-group">
+        <input type="text" id="movieInput" placeholder="*://*.example.com/*">
+        <button class="primary" id="addMovieBtn">Add Domain</button>
+      </div>
+      <ul class="domain-list" id="movieList"></ul>
+    </div>
+
+    <div class="card">
+      <h2>2. Bypass Chain Domains</h2>
+      <p class="desc" style="margin-bottom: 16px;">
+        Add domains used in the redirect chain (e.g. <code>*://*.new-gdflix.com/*</code>).
+        This allows the extension to auto-click buttons and solve Captchas.
+      </p>
+      <div class="input-group">
+        <input type="text" id="bypassInput" placeholder="*://*.example.com/*">
+        <button class="primary" id="addBypassBtn">Add Domain</button>
+      </div>
+      <ul class="domain-list" id="bypassList"></ul>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

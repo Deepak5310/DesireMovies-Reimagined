@@ -25,30 +25,50 @@ const failureCounts = new Map();
 /** Hostnames that failed ≥2 times — skip headless, go foreground. */
 const fallbackDomains = new Set();
 
+/** Dynamic bypass domains added via Options page. */
+let dynamicBypassDomains = [];
+
+function extractDomain(pattern) {
+  return pattern.replace(/^\*:\/\/(?:\*\.)?/, "").replace(/\/\*$/, "");
+}
+
 /**
  * Restore session state from chrome.storage.session.
  * Awaited before any bypass logic so state survives SW restarts.
  */
 const ready = (async () => {
   try {
-    const data = await chrome.storage.session.get([
-      "bypassCache", "failureCounts", "fallbackDomains",
+    const [sessionData, localData] = await Promise.all([
+      chrome.storage.session.get(["bypassCache", "failureCounts", "fallbackDomains"]),
+      chrome.storage.local.get(["dynamicDomains"])
     ]);
-    if (data.bypassCache) {
-      for (const [k, v] of Object.entries(data.bypassCache))
+    
+    if (sessionData.bypassCache) {
+      for (const [k, v] of Object.entries(sessionData.bypassCache))
         bypassCache.set(k, v);
     }
-    if (data.failureCounts) {
-      for (const [k, v] of Object.entries(data.failureCounts))
+    if (sessionData.failureCounts) {
+      for (const [k, v] of Object.entries(sessionData.failureCounts))
         failureCounts.set(k, parseInt(v) || 0);
     }
-    if (data.fallbackDomains) {
-      for (const d of data.fallbackDomains) fallbackDomains.add(d);
+    if (sessionData.fallbackDomains) {
+      for (const d of sessionData.fallbackDomains) fallbackDomains.add(d);
+    }
+    
+    if (localData.dynamicDomains?.bypass) {
+      dynamicBypassDomains = localData.dynamicDomains.bypass.map(extractDomain);
     }
   } catch (e) {
     console.warn("[DM] Session restore failed:", e);
   }
 })();
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.dynamicDomains) {
+    const bypass = changes.dynamicDomains.newValue?.bypass || [];
+    dynamicBypassDomains = bypass.map(extractDomain);
+  }
+});
 
 /** Persist all session state. */
 function persistState() {
@@ -91,11 +111,12 @@ function isHttpUrl(str) {
   }
 }
 
-/** Allowlist: only gyanigurus.xyz may be headless-bypassed. */
+/** Allowlist: allows statically defined and dynamically added bypass domains. */
 function isAllowedBypassUrl(url) {
   if (!isHttpUrl(url)) return false;
   const h = new URL(url).hostname;
-  return h === "gyanigurus.xyz" || h.endsWith(".gyanigurus.xyz");
+  if (h === "gyanigurus.xyz" || h.endsWith(".gyanigurus.xyz")) return true;
+  return dynamicBypassDomains.some(domain => h === domain || h.endsWith("." + domain));
 }
 
 // ─── Headless Bypass — Full Chain ──────────────────────────────────────────

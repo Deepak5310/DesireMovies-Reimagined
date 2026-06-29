@@ -21,7 +21,8 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["downloads", "storage"],
+  "options_page": "options/options.html",
+  "permissions": ["downloads", "storage", "scripting"],
   "host_permissions": [
     "*://*.gyanigurus.xyz/*",
     "*://*.gdflix.io/*",
