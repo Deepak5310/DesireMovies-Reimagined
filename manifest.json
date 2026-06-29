@@ -41,7 +41,15 @@
       "run_at": "document_start"
     },
     {
-      "matches": ["*://*.1desiremovies.dad/*"],
+      "matches": [
+        "*://*.1desiremovies.dad/*",
+        "*://*.katmoviehd.top/*",
+        "*://*.katmoviehd.vip/*",
+        "*://*.katmoviehd.re/*",
+        "*://katmoviehd.top/*",
+        "*://katmoviehd.vip/*",
+        "*://katmoviehd.re/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
