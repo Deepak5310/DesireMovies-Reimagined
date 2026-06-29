@@ -177,6 +177,10 @@
         }
         targetElement.click();
         cleanup();
+        // If it opens a new tab (like the button usually does), close this tab after a short delay
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ action: "close_tab" });
+        }, 500);
         return true;
       }
 
