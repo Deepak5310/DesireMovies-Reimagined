@@ -7,7 +7,7 @@
   const host = window.location.hostname;
   
   // Quick exit if not a target domain
-  if (!host.includes("gyanigurus.xyz") && !host.includes("gdflix") && !host.includes("fastcdn-dl.pages.dev")) {
+  if (!host.includes("gyanigurus.xyz") && !host.includes("gdflix") && !host.includes("fastcdn-dl.pages.dev") && !host.includes("kmhd")) {
     return;
   }
 
@@ -153,6 +153,62 @@
     }
 
     runFastCDN();
+  }
+
+  // --- KMHD Logic ---
+  else if (host.includes("kmhd")) {
+    const BUTTON_TEXT_RE = /unlock\s*links|click\s*to\s*unlock/i;
+
+    let clickedUnlock = false;
+    let clickedGdflix = false;
+
+    function tryClickUnlockOrGdflix() {
+      if (clickedGdflix) return true;
+
+      // 1. If we are on the page with links, find the gdflix link/button and click it
+      const gdflixLink = document.querySelector('a[href*="gdflix"]');
+      const gdflixImgBtn = document.querySelector('img[alt*="gdflix"]')?.closest('button');
+      const targetElement = gdflixLink || gdflixImgBtn;
+      
+      if (targetElement) {
+        clickedGdflix = true;
+        if (targetElement.tagName === 'A') {
+          targetElement.target = "_self";
+        }
+        targetElement.click();
+        cleanup();
+        return true;
+      }
+
+      // 2. If we are on the initial page, click the unlock button
+      if (!clickedUnlock) {
+        for (const btn of document.querySelectorAll("button")) {
+          if (BUTTON_TEXT_RE.test(btn.textContent)) {
+            clickedUnlock = true;
+            // Wait 1.5 seconds for SvelteKit to hydrate before clicking
+            setTimeout(() => {
+              btn.click();
+            }, 1500);
+            break;
+          }
+        }
+      }
+      return false;
+    }
+
+    function runKmhd() {
+      if (tryClickUnlockOrGdflix()) return;
+      
+      const debouncedCallback = debounce(() => {
+        if (tryClickUnlockOrGdflix()) return;
+      }, 150);
+
+      observer = new MutationObserver(debouncedCallback);
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      safetyTimeoutId = setTimeout(cleanup, 15000);
+    }
+
+    runKmhd();
   }
 
 })();

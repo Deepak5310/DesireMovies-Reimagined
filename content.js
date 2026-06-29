@@ -4,7 +4,8 @@
 (function() {
   "use strict";
 
-  if (!window.location.hostname.includes("desiremovies")) {
+  const host = window.location.hostname;
+  if (!host.includes("desiremovies") && !host.includes("katmoviehd")) {
     return;
   }
 
