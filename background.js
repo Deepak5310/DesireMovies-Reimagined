@@ -36,9 +36,11 @@ const ready = (async () => {
 
 /** Persist all session state. */
 function persistState() {
-  chrome.storage.session.set({
-    bypassCache: Object.fromEntries(bypassCache),
-  }).catch((e) => console.warn("[DM] Session persist failed:", e));
+  chrome.storage.session
+    .set({
+      bypassCache: Object.fromEntries(bypassCache),
+    })
+    .catch((e) => console.warn("[DM] Session persist failed:", e));
 }
 
 // ─── Network ───────────────────────────────────────────────────────────────
@@ -57,7 +59,8 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
 /** Fetch page HTML as text. Throws on non-OK status. */
 async function fetchHTML(url) {
   const res = await fetchWithTimeout(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${new URL(url).hostname}`);
+  if (!res.ok)
+    throw new Error(`HTTP ${res.status} fetching ${new URL(url).hostname}`);
   return res.text();
 }
 
@@ -84,7 +87,8 @@ function isAllowedBypassUrl(url) {
 // ─── Headless Bypass — Full Chain ──────────────────────────────────────────
 
 const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"']*gdflix[^"']*)['"]/i;
-const INSTANT_DL_RE = /href=["'](https?:\/\/instant\.busycdn\.xyz\/[^"']+)['"]/i;
+const INSTANT_DL_RE =
+  /href=["'](https?:\/\/instant\.busycdn\.xyz\/[^"']+)['"]/i;
 
 /**
  * Resolve the ENTIRE download chain headlessly:
@@ -136,7 +140,8 @@ async function resolveFullChain(url) {
   // Step 2: GDFlix → "Instant DL" busycdn URL
   const html2 = await fetchHTML(gdflixUrl);
   const instantMatch = html2.match(INSTANT_DL_RE);
-  if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
+  if (!instantMatch)
+    throw new Error("Instant DL link not found on GDFlix page");
 
   const busycdnUrl = instantMatch[1];
   console.log("[DM] Step 2 done: BusyCDN URL →", busycdnUrl.slice(0, 60) + "…");
@@ -172,7 +177,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     }
 
     console.log("[DM] Bypass Started:", url);
-    
+
     // Deduplicate concurrent requests for the same URL.
     let promise = activeBypasses.get(url);
     if (!promise) {
@@ -202,17 +207,18 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 // ─── Filename Normalization ────────────────────────────────────────────────
 
 // Pre-compiled regexes (avoid re-creation on every download event).
-const RE_TRAILING_DUP   = /\s*\(\d+\)$/;
-const RE_BRACKETS       = /[\[\]\(\)\{\}]/g;
-const RE_EP_PREFIX      = /^EP((\.\d+)+)\./i;
-const RE_BRANDING = /[-\s]*\b(desiremovies)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|4k|2160p|1080p|720p|480p|dual[- ]?audio|esubs?|multi[- ]?audio|x264|x265|web[- ]?dl|brrip|bluray)\b/gi;
+const RE_TRAILING_DUP = /\s*\(\d+\)$/;
+const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
+const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
+const RE_BRANDING =
+  /[-\s]*\b(desiremovies)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|x264|x265)\b/gi;
 const RE_EXTRA_DASHES = /-{2,}/g;
-const RE_SEASON         = /\b(S\d{2})\b/gi;
-const RE_AUDIO_DOTS     = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
-const RE_ALL_DOTS       = /\./g;
+const RE_SEASON = /\b(S\d{2})\b/gi;
+const RE_AUDIO_DOTS = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
+const RE_ALL_DOTS = /\./g;
 const RE_DOT_PLACEHOLDER = /_DOT_/g;
-const RE_NON_ALNUM      = /[^a-zA-Z0-9\-.]/g;
-const RE_MULTI_SPACE    = /\s+/g;
+const RE_NON_ALNUM = /[^a-zA-Z0-9\-.]/g;
+const RE_MULTI_SPACE = /\s+/g;
 const RE_TRAILING_PUNCT = /[-.]+$/;
 
 /**
@@ -236,9 +242,10 @@ function cleanFilename(filename) {
   base = base.replace(RE_EP_PREFIX, (_, group) => {
     const nums = group.split(".").filter(Boolean).map(Number);
     const pad = (n) => String(n).padStart(2, "0");
-    epTag = nums[0] === nums.at(-1)
-      ? `EP${pad(nums[0])}`
-      : `EP${pad(nums[0])}-${pad(nums.at(-1))}`;
+    epTag =
+      nums[0] === nums.at(-1)
+        ? `EP${pad(nums[0])}`
+        : `EP${pad(nums[0])}-${pad(nums.at(-1))}`;
     return "";
   });
 
@@ -254,7 +261,15 @@ function cleanFilename(filename) {
     .replace(RE_TRAILING_PUNCT, "")
     .split(" ")
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (lower === "4k") return "4K";
+      if (lower === "web-dl" || lower === "webdl") return "WEB-DL";
+      if (lower === "web-hdrip" || lower === "webhdrip") return "WEB-HDRip";
+      if (lower === "bluray") return "BluRay";
+      if (lower === "webrip") return "WEB-Rip";
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
     .join(" ");
 
   return clean + ext;
