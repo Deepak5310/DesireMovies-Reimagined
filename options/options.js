@@ -27,6 +27,7 @@ function renderLists() {
   movieList.innerHTML = "";
   bypassList.innerHTML = "";
 
+  const movieFrag = document.createDocumentFragment();
   dynamicDomains.movies.forEach(domain => {
     const li = document.createElement("li");
     li.className = "domain-item";
@@ -34,9 +35,11 @@ function renderLists() {
       <span>${domain}</span>
       <button class="danger" data-type="movies" data-domain="${domain}">Remove</button>
     `;
-    movieList.appendChild(li);
+    movieFrag.appendChild(li);
   });
+  movieList.appendChild(movieFrag);
 
+  const bypassFrag = document.createDocumentFragment();
   dynamicDomains.bypass.forEach(domain => {
     const li = document.createElement("li");
     li.className = "domain-item";
@@ -44,8 +47,9 @@ function renderLists() {
       <span>${domain}</span>
       <button class="danger" data-type="bypass" data-domain="${domain}">Remove</button>
     `;
-    bypassList.appendChild(li);
+    bypassFrag.appendChild(li);
   });
+  bypassList.appendChild(bypassFrag);
 }
 
 // ─── Storage & Init ─────────────────────────────────────────────────────────
@@ -80,7 +84,7 @@ async function addDomain(type, pattern) {
     }
 
     // 2. Register dynamic content script
-    const scriptId = `dynamic_${type}_${btoa(pattern).replace(/[^a-zA-Z0-9]/g, "")}`;
+    const scriptId = `dynamic_${type}_${pattern.replace(/[^a-zA-Z0-9]/g, "_")}`;
     const scriptConfig = {
       id: scriptId,
       matches: [pattern],
@@ -111,7 +115,7 @@ async function addDomain(type, pattern) {
 
 async function removeDomain(type, pattern) {
   try {
-    const scriptId = `dynamic_${type}_${btoa(pattern).replace(/[^a-zA-Z0-9]/g, "")}`;
+    const scriptId = `dynamic_${type}_${pattern.replace(/[^a-zA-Z0-9]/g, "_")}`;
     
     // 1. Unregister script
     try { await chrome.scripting.unregisterContentScripts({ ids: [scriptId] }); } catch (e) {}

@@ -164,10 +164,14 @@ async function resolveFullChain(url) {
   let match = html1.match(GDFLIX_HREF_RE);
   if (!match) {
     // Try POST with hidden form fields (some pages need this)
-    const doc = new DOMParser().parseFromString(html1, "text/html");
     const body = new URLSearchParams();
-    for (const el of doc.querySelectorAll('input[type="hidden"][name]')) {
-      body.append(el.name, el.value ?? "");
+    for (const match of html1.matchAll(/<input[^>]+>/gi)) {
+      const tag = match[0];
+      if (/type=["']?hidden["']?/i.test(tag)) {
+        const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
+        const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
+        if (name) body.append(name, value);
+      }
     }
     const res2 = await fetchWithTimeout(url, {
       method: "POST",
@@ -285,10 +289,14 @@ const actions = {
       const html = await fetchHTML(url);
       let match = html.match(GDFLIX_HREF_RE);
       if (!match) {
-        const doc = new DOMParser().parseFromString(html, "text/html");
         const body = new URLSearchParams();
-        for (const el of doc.querySelectorAll('input[type="hidden"][name]')) {
-          body.append(el.name, el.value ?? "");
+        for (const match of html.matchAll(/<input[^>]+>/gi)) {
+          const tag = match[0];
+          if (/type=["']?hidden["']?/i.test(tag)) {
+            const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
+            const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
+            if (name) body.append(name, value);
+          }
         }
         const res = await fetchWithTimeout(url, {
           method: "POST",

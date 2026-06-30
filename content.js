@@ -59,10 +59,13 @@
     anchor.style.pointerEvents = "none";
     anchor.style.cursor = "wait";
 
+    anchor.dataset.bypassing = "true";
+
     return () => {
       anchor.innerHTML = saved.html;
       anchor.style.pointerEvents = saved.pointerEvents;
       anchor.style.cursor = saved.cursor;
+      delete anchor.dataset.bypassing;
     };
   }
 
@@ -80,6 +83,7 @@
 
     if (!isGyanigurus && !isKmhd) return;
 
+    if (anchor.dataset.bypassing) return;
     e.preventDefault();
     e.stopPropagation();
 
