@@ -5,8 +5,7 @@
  *   1. Full headless bypass: resolves the entire download chain
  *      (Gyanigurus → GDFlix → BusyCDN → final URL) without opening any tabs,
  *      then triggers chrome.downloads.download() directly.
- *   2. Tab management: opens background tabs, closes automation tabs (fallback).
- *   3. Filename normalization: cleans every Chrome download filename.
+ *   2. Filename normalization: cleans every Chrome download filename.
  */
 
 "use strict";
@@ -19,30 +18,16 @@ const activeBypasses = new Map();
 /** Cache: gyanigurus url → final download url. */
 const bypassCache = new Map();
 
-/** Consecutive failure count per hostname. */
-const failureCounts = new Map();
-
-/** Hostnames that failed ≥2 times — skip headless, go foreground. */
-const fallbackDomains = new Set();
-
 /**
  * Restore session state from chrome.storage.session.
  * Awaited before any bypass logic so state survives SW restarts.
  */
 const ready = (async () => {
   try {
-    const sessionData = await chrome.storage.session.get(["bypassCache", "failureCounts", "fallbackDomains"]);
-    
+    const sessionData = await chrome.storage.session.get(["bypassCache"]);
     if (sessionData.bypassCache) {
       for (const [k, v] of Object.entries(sessionData.bypassCache))
         bypassCache.set(k, v);
-    }
-    if (sessionData.failureCounts) {
-      for (const [k, v] of Object.entries(sessionData.failureCounts))
-        failureCounts.set(k, parseInt(v) || 0);
-    }
-    if (sessionData.fallbackDomains) {
-      for (const d of sessionData.fallbackDomains) fallbackDomains.add(d);
     }
   } catch (e) {
     console.warn("[DM] Session restore failed:", e);
@@ -53,8 +38,6 @@ const ready = (async () => {
 function persistState() {
   chrome.storage.session.set({
     bypassCache: Object.fromEntries(bypassCache),
-    failureCounts: Object.fromEntries(failureCounts),
-    fallbackDomains: [...fallbackDomains],
   }).catch((e) => console.warn("[DM] Session persist failed:", e));
 }
 
@@ -169,7 +152,6 @@ async function resolveFullChain(url) {
 
   // Cache the final download URL
   bypassCache.set(url, finalUrl);
-  failureCounts.set(domain, 0);
   persistState();
 
   return { success: true, downloadUrl: finalUrl };
@@ -177,113 +159,31 @@ async function resolveFullChain(url) {
 
 // ─── Message Handler ───────────────────────────────────────────────────────
 
-/** Action handlers keyed by message action string. */
-const actions = {
-  close_tab(_, sender) {
-    const tabId = sender.tab?.id;
-    if (tabId) chrome.tabs.remove(tabId).catch(() => {});
-    return { success: true };
-  },
-
-  open_background_tab({ url }) {
-    if (url) chrome.tabs.create({ url, active: false });
-    return { success: true };
-  },
-
-  /**
-   * Full headless bypass: resolves entire chain and triggers download directly.
-   * No tabs opened at all.
-   */
-  async full_bypass({ url }) {
-    if (!url) return { success: false, error: "Missing URL" };
+chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+  if (req.action === "full_bypass") {
+    const url = req.payload?.url;
+    if (!url) {
+      sendResponse({ success: false, error: "Missing URL" });
+      return false;
+    }
     if (!isAllowedBypassUrl(url)) {
-      return { success: false, error: "URL not in bypass allowlist" };
+      sendResponse({ success: false, error: "URL not in bypass allowlist" });
+      return false;
     }
 
-    await ready;
-    const domain = new URL(url).hostname;
-
-    if (fallbackDomains.has(domain)) {
-      return { success: false, fallback: true, error: "Domain flagged for fallback" };
-    }
-
+    console.log("[DM] Bypass Started:", url);
+    
     // Deduplicate concurrent requests for the same URL.
     let promise = activeBypasses.get(url);
     if (!promise) {
-      promise = resolveFullChain(url);
+      promise = ready.then(() => resolveFullChain(url));
       activeBypasses.set(url, promise);
       promise.finally(() => activeBypasses.delete(url));
     }
 
-    try {
-      const result = await promise;
-
-      // Trigger the download directly from the service worker.
-      chrome.downloads.download({ url: result.downloadUrl });
-      console.log("[DM] Download triggered directly — zero tabs opened.");
-
-      return { success: true, downloadStarted: true };
-    } catch (err) {
-      const count = (failureCounts.get(domain) ?? 0) + 1;
-      failureCounts.set(domain, count);
-      if (count >= 2) fallbackDomains.add(domain);
-      persistState();
-      console.warn("[DM] Full bypass failed:", err.message);
-      return { success: false, error: err.message };
-    }
-  },
-
-  /**
-   * Legacy bypass: resolves only to GDFlix URL (for tab-based fallback).
-   */
-  async bypass_gyanigurus({ url }) {
-    if (!url) return { success: false, error: "Missing URL" };
-    if (!isAllowedBypassUrl(url)) {
-      return { success: false, error: "URL not in bypass allowlist" };
-    }
-
-    await ready;
-    const domain = new URL(url).hostname;
-
-    if (fallbackDomains.has(domain)) {
-      return { success: false, fallback: true, error: "Domain flagged for fallback" };
-    }
-
-    try {
-      const html = await fetchHTML(url);
-      let match = html.match(GDFLIX_HREF_RE);
-      if (!match) {
-        const body = new URLSearchParams();
-        for (const match of html.matchAll(/<input[^>]+>/gi)) {
-          const tag = match[0];
-          if (/type=["']?hidden["']?/i.test(tag)) {
-            const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
-            const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
-            if (name) body.append(name, value);
-          }
-        }
-        const res = await fetchWithTimeout(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: body.toString(),
-        });
-        if (res.ok) match = (await res.text()).match(GDFLIX_HREF_RE);
-      }
-      if (match) return { success: true, gdflixUrl: match[1] };
-      throw new Error("GDFlix link not found");
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  },
-};
-
-chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
-
-  if (req.action === "full_bypass") {
-    console.log("[DM] Bypass Started:", req.payload.url);
-    resolveFullChain(req.payload.url)
+    promise
       .then((result) => {
-        console.log("[DM] Download Started");
+        console.log("[DM] Download Started:", result.downloadUrl);
         chrome.downloads.download({ url: result.downloadUrl });
         sendResponse({ success: true });
       })
@@ -291,36 +191,11 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         console.warn("[DM] Headless Failed:", err.message);
         sendResponse({ success: false, error: err.message });
       });
+
     return true;
   }
 
-  if (req.action === "bypass_gyanigurus") {
-    actions.bypass_gyanigurus(req.payload)
-      .then((res) => {
-        if (res.success) {
-          console.log("[DM] Tab Fallback: Headless failed, using background tab for GDFlix.");
-        }
-        sendResponse(res);
-      })
-      .catch((err) => {
-        console.warn("[DM] Tab Fallback Failed:", err.message);
-        sendResponse({ success: false, error: err.message });
-      });
-    return true;
-  }
-
-  const handler = actions[req.action];
-  if (!handler) {
-    sendResponse({ success: false, error: `Unknown action: ${req.action}` });
-    return false;
-  }
-
-  const result = handler(req.payload ?? {}, sender);
-  if (result instanceof Promise) {
-    result.then(sendResponse).catch((e) => sendResponse({ success: false, error: e.message }));
-    return true;
-  }
-  sendResponse(result);
+  sendResponse({ success: false, error: `Unknown action: ${req.action}` });
   return false;
 });
 

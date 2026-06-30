@@ -6,7 +6,6 @@
  * background service worker for fully headless resolution:
  *
  *   Primary:  full_bypass → resolves entire chain → download starts directly
- *   Fallback: bypass_gyanigurus → opens GDFlix tab (automation.js handles the rest)
  */
 
 (function () {
@@ -88,20 +87,15 @@
           return;
         }
 
-        // full_bypass failed — fall back to tab-based approach.
-        console.warn("[DM] Full bypass failed, falling back to tab:", res?.error);
-
-        const fallback = await sendBg("bypass_gyanigurus", { url: href });
-        const targetUrl = fallback?.success && fallback.gdflixUrl
-          ? fallback.gdflixUrl
-          : href;
-
-        await sendBg("open_background_tab", { url: targetUrl });
+        // full_bypass failed — let user proceed manually
+        console.warn("[DM] Full bypass failed:", res?.error);
+        showStatus(anchor, "❌ Failed");
+        window.open(href, '_blank');
       }
     } catch (err) {
-      // Everything failed — open the original link directly.
-      console.warn("[DM] All bypass paths failed:", err.message);
-      await sendBg("open_background_tab", { url: href }).catch(() => {});
+      console.warn("[DM] Request failed:", err.message);
+      showStatus(anchor, "❌ Error");
+      window.open(href, '_blank');
     } finally {
       setTimeout(restore, 2000);
     }

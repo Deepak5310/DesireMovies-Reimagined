@@ -32,16 +32,6 @@
   ],
   "content_scripts": [
     {
-      "matches": [
-        "*://*.gyanigurus.xyz/*",
-        "*://*.gdflix.io/*",
-        "*://*.fastcdn-dl.pages.dev/*",
-        "*://*.foxcloud.rest/*"
-      ],
-      "js": ["automation.js"],
-      "run_at": "document_start"
-    },
-    {
       "matches": ["*://*.1desiremovies.dad/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
