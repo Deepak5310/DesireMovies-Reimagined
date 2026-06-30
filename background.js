@@ -7,10 +7,10 @@ const ready = (async () => {
     if (sessionData.bypassCache) {
       for (const [k, v] of Object.entries(sessionData.bypassCache)) bypassCache.set(k, v);
     }
-  } catch (e) { console.warn("[DM] Session restore failed:", e); }
+  } catch (e) {}
 })();
 function persistState() {
-  chrome.storage.session.set({ bypassCache: Object.fromEntries(bypassCache) }).catch((e) => console.warn("[DM] Session persist failed:", e));
+  chrome.storage.session.set({ bypassCache: Object.fromEntries(bypassCache) }).catch(() => {});
 }
 async function fetchWithTimeout(url, options = {}, ms = 8000) {
   const ctrl = new AbortController();
@@ -53,16 +53,13 @@ async function resolveFullChain(url) {
   }
   if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
   const gdflixUrl = match[1];
-  console.log("[DM] Step 1 done: GDFlix URL →", gdflixUrl);
   const html2 = await fetchHTML(gdflixUrl);
   const instantMatch = html2.match(INSTANT_DL_RE);
   if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
   const busycdnUrl = instantMatch[1];
-  console.log("[DM] Step 2 done: BusyCDN URL →", busycdnUrl.slice(0, 60) + "…");
   const redirectRes = await fetchWithTimeout(busycdnUrl);
   const finalUrl = new URL(redirectRes.url).searchParams.get("url");
   if (!finalUrl) throw new Error("No ?url= param in redirect destination");
-  console.log("[DM] Step 3 done: Final URL →", finalUrl.slice(0, 80) + "…");
   bypassCache.set(url, finalUrl);
   persistState();
   return { success: true, downloadUrl: finalUrl };
@@ -72,7 +69,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     const url = req.payload?.url;
     if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
     if (!isAllowedBypassUrl(url)) { sendResponse({ success: false, error: "URL not in bypass allowlist" }); return false; }
-    console.log("[DM] Bypass Started:", url);
     let promise = activeBypasses.get(url);
     if (!promise) {
       promise = ready.then(() => resolveFullChain(url));
@@ -80,11 +76,9 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       promise.finally(() => activeBypasses.delete(url));
     }
     promise.then((result) => {
-      console.log("[DM] Download Started:", result.downloadUrl);
       chrome.downloads.download({ url: result.downloadUrl });
       sendResponse({ success: true });
     }).catch((err) => {
-      console.warn("[DM] Headless Failed:", err.message);
       sendResponse({ success: false, error: err.message });
     });
     return true;
@@ -144,7 +138,6 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   try {
     suggest({ filename: cleanFilename(item.filename) });
   } catch (e) {
-    console.error("[DM] Filename cleaning error:", e);
     suggest();
   }
 });

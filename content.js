@@ -43,11 +43,9 @@
         setTimeout(restore, 3000);
         return;
       }
-      console.warn("[DM] Full bypass failed:", res?.error);
       showStatus(anchor, "❌ Failed");
       window.open(href, '_blank');
     } catch (err) {
-      console.warn("[DM] Request failed:", err.message);
       showStatus(anchor, "❌ Error");
       window.open(href, '_blank');
     } finally {
