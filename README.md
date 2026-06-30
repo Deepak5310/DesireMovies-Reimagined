@@ -1,6 +1,6 @@
 # DesireMovies Bypass
 
-A Chrome MV3 extension that automates multi-hop download bypasses on DesireMovies and KatMovieHD. Resolves the entire download chain headlessly — **zero tabs opened, download starts directly**.
+A Chrome MV3 extension that automates multi-hop download bypasses on DesireMovies. Resolves the entire download chain headlessly — **zero tabs opened, download starts directly**.
 
 ---
 
@@ -32,8 +32,6 @@ content.js falls back to opening a GDFlix tab
        └─ automation.js (FastCDN) waits, clicks download, closes tab
 ```
 
-For KMHD pages, automation.js handles "Unlock Links" → GDFlix → FastCDN.
-
 ---
 
 ## Features
@@ -45,7 +43,6 @@ For KMHD pages, automation.js handles "Unlock Links" → GDFlix → FastCDN.
 | **Automatic fallback** | Falls back to tab-based flow if headless fails |
 | **Filename cleaning** | Strips branding, quality tags, dot-spacing; standardizes episode format |
 | **Bypass cache** | Caches resolved download URLs per session |
-| **KMHD support** | Unlocks links and navigates the GDFlix flow |
 | **Self-closing tabs** | Fallback automation tabs close themselves |
 
 ---
@@ -71,7 +68,6 @@ No configuration required. Once loaded:
 
 - **DesireMovies** — Click any download link. You'll see "⏳ Bypassing…" then "✅ Download started". No tabs open.
 - **GDFlix / FastCDN** — If opened manually or via fallback, automation.js handles clicks automatically.
-- **KMHD** — Unlock buttons are clicked automatically.
 - **Downloads** — All filenames are automatically cleaned.
 
 ### Filename Examples
@@ -113,9 +109,9 @@ DesireMovies-Reimagined/
 
 | Script | Sites | Purpose |
 |---|---|---|
-| `content.js` | DesireMovies, KatMovieHD | Intercepts download clicks → triggers full headless bypass |
+| `content.js` | DesireMovies | Intercepts download clicks → triggers full headless bypass |
 | `background.js` | Service Worker | Resolves entire chain, triggers direct download, cleans filenames |
-| `automation.js` | Gyanigurus, GDFlix, FastCDN, KMHD | Fallback: DOM auto-clicks when tabs are opened |
+| `automation.js` | Gyanigurus, GDFlix, FastCDN | Fallback: DOM auto-clicks when tabs are opened |
 
 ---
 

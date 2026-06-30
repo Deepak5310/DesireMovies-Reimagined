@@ -1,7 +1,7 @@
 /**
  * automation.js — Content Script (document_start)
  *
- * Injected only into bypass-chain pages: Gyanigurus, GDFlix, FastCDN, KMHD.
+ * Injected only into bypass-chain pages: Gyanigurus, GDFlix, FastCDN.
  * Auto-clicks through each step of the download flow and closes the tab when done.
  */
 
@@ -140,57 +140,6 @@
           return false;
         }
         if (!tryDownload()) observe(() => tryDownload());
-      }
-    },
-    {
-      name: "KMHD",
-      matches: (h) => h.includes("kmhd") || h.includes("katmoviehd"),
-      init: () => {
-        const UNLOCK_RE = /unlock\s*links|click\s*to\s*unlock/i;
-        let unlocked = false;
-
-        function tryBypass() {
-          if (completed) return true;
-          
-          // 1. Regex bypass (fastest)
-          const html = document.documentElement.innerHTML;
-          const match = html.match(/https?:\/\/[a-zA-Z0-9.\-]*(gdflix|foxcloud|busycdn|fastcdn|gdtot)[a-zA-Z0-9.\-]*\/[^\s"'\\]+/i);
-          if (match) {
-            completed = true;
-            window.location.href = match[0].replace(/\\/g, "");
-            return true;
-          }
-
-          // 2. DOM extraction
-          const target = document.querySelector('a[href*="gdflix"], a[href*="foxcloud"], a[href*="busycdn"], a[href*="fastcdn"], a[href*="gdtot"]') ||
-                         document.querySelector('img[alt*="gdflix"]')?.closest("button");
-          if (target) {
-            clickAndClose(target);
-            return true;
-          }
-
-          // 3. Auto-clicker
-          if (!unlocked) {
-            for (const btn of document.querySelectorAll("button")) {
-              if (UNLOCK_RE.test(btn.textContent)) {
-                unlocked = true;
-                let clicks = 0;
-                const interval = setInterval(() => {
-                  clicks++;
-                  if (document.body.contains(btn) && clicks <= 5) {
-                    btn.click();
-                  } else {
-                    clearInterval(interval);
-                  }
-                }, 1000);
-                break;
-              }
-            }
-          }
-          return false;
-        }
-
-        if (!tryBypass()) observe(() => tryBypass());
       }
     }
   ];

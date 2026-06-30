@@ -1,7 +1,7 @@
 /**
  * content.js — Content Script (document_idle)
  *
- * Injected only into DesireMovies and KatMovieHD pages.
+ * Injected only into DesireMovies pages.
  * Intercepts clicks on Gyanigurus download links and sends them to the
  * background service worker for fully headless resolution:
  *
@@ -79,9 +79,8 @@
     if (!href) return;
 
     const isGyanigurus = href.includes("gyanigurus");
-    const isKmhd = href.includes("links.kmhd.eu") || dynamicBypassDomains.some(d => href.includes(d));
 
-    if (!isGyanigurus && !isKmhd) return;
+    if (!isGyanigurus) return;
 
     if (anchor.dataset.bypassing) return;
     e.preventDefault();
@@ -110,12 +109,6 @@
           : href;
 
         await sendBg("open_background_tab", { url: targetUrl });
-      } else if (isKmhd) {
-        // KMHD has Cloudflare JS challenges, so headless fetch fails.
-        // Instead, open it in a background tab so automation.js can handle it silently.
-        await sendBg("add_log", { title: "Background Bypass", message: `Opening background tab for ${new URL(href).hostname}`, status: "warning" }).catch(()=>{});
-        await sendBg("open_background_tab", { url: href });
-        showStatus(anchor, "✅ Bypassing in background");
       }
     } catch (err) {
       // Everything failed — open the original link directly.
@@ -123,8 +116,7 @@
       await sendBg("add_log", { title: "All Failed", message: `Opening ${new URL(href).hostname} normally.`, status: "error" }).catch(()=>{});
       await sendBg("open_background_tab", { url: href }).catch(() => {});
     } finally {
-      // Keep the success message visible for a bit longer for KMHD since it takes time
-      setTimeout(restore, isKmhd ? 4000 : 2000);
+      setTimeout(restore, 2000);
     }
   });
 })();
