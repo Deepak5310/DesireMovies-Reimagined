@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DesireMovies Bypass",
-  "version": "3.0.0",
+  "version": "1.0",
   "description": "Automates multi-hop download bypasses and cleans filenames for DesireMovies.",
   "icons": {
     "16": "icons/icon16.png",
@@ -12,23 +12,11 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["downloads", "storage", "declarativeNetRequest"],
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "block_scripts",
-        "enabled": true,
-        "path": "rules/block_scripts.json"
-      }
-    ]
-  },
+  "permissions": ["downloads", "storage"],
   "host_permissions": [
-    "*://*.gyanigurus.xyz/*",
     "*://*.gdflix.io/*",
-    "*://*.gdflix.dev/*",
-    "*://*.busycdn.xyz/*",
-    "*://*.fastcdn-dl.pages.dev/*",
-    "*://*.foxcloud.rest/*"
+    "*://*.gyanigurus.xyz/*",
+    "*://*.fastcdn-dl.pages.dev/*"
   ],
   "content_scripts": [
     {

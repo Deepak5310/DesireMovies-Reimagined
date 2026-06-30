@@ -11,11 +11,6 @@
 (function () {
   "use strict";
 
-  // Defense-in-depth: manifest already limits injection to target domains.
-  const { hostname } = location;
-
-
-
   // ─── Messaging ─────────────────────────────────────────────────────────────
 
   /** Send a message to the background service worker. */
@@ -76,22 +71,20 @@
     const restore = showStatus(anchor, "⏳ Bypassing…");
 
     try {
-      if (isGyanigurus) {
-        // Primary path: fully headless — no tabs at all.
-        const res = await sendBg("full_bypass", { url: href });
+      // Primary path: fully headless — no tabs at all.
+      const res = await sendBg("full_bypass", { url: href });
 
-        if (res?.success) {
-          // Download started directly by the service worker.
-          showStatus(anchor, "✅ Download started");
-          setTimeout(restore, 3000);
-          return;
-        }
-
-        // full_bypass failed — let user proceed manually
-        console.warn("[DM] Full bypass failed:", res?.error);
-        showStatus(anchor, "❌ Failed");
-        window.open(href, '_blank');
+      if (res?.success) {
+        // Download started directly by the service worker.
+        showStatus(anchor, "✅ Download started");
+        setTimeout(restore, 3000);
+        return;
       }
+
+      // full_bypass failed — let user proceed manually
+      console.warn("[DM] Full bypass failed:", res?.error);
+      showStatus(anchor, "❌ Failed");
+      window.open(href, '_blank');
     } catch (err) {
       console.warn("[DM] Request failed:", err.message);
       showStatus(anchor, "❌ Error");

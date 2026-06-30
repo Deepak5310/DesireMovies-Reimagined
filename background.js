@@ -66,22 +66,15 @@ async function fetchHTML(url) {
 
 // ─── Security ──────────────────────────────────────────────────────────────
 
-/** True only for http/https URLs. */
-function isHttpUrl(str) {
+/** Allowlist: restricts headless fetch to gyanigurus.xyz domains. */
+function isAllowedBypassUrl(url) {
   try {
-    const p = new URL(str).protocol;
-    return p === "http:" || p === "https:";
+    const p = new URL(url);
+    return (p.protocol === "http:" || p.protocol === "https:") &&
+           (p.hostname === "gyanigurus.xyz" || p.hostname.endsWith(".gyanigurus.xyz"));
   } catch {
     return false;
   }
-}
-
-/** Allowlist: allows statically defined and dynamically added bypass domains. */
-function isAllowedBypassUrl(url) {
-  if (!isHttpUrl(url)) return false;
-  const h = new URL(url).hostname;
-  if (h === "gyanigurus.xyz" || h.endsWith(".gyanigurus.xyz")) return true;
-  return false;
 }
 
 // ─── Headless Bypass — Full Chain ──────────────────────────────────────────
@@ -212,7 +205,6 @@ const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
 const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
 const RE_BRANDING =
   /[-\s]*\b(desiremovies)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|x264|x265)\b/gi;
-const RE_EXTRA_DASHES = /-{2,}/g;
 const RE_SEASON = /\b(S\d{2})\b/gi;
 const RE_AUDIO_DOTS = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
 const RE_ALL_DOTS = /\./g;
