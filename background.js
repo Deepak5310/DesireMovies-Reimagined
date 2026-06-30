@@ -25,23 +25,13 @@ const failureCounts = new Map();
 /** Hostnames that failed ≥2 times — skip headless, go foreground. */
 const fallbackDomains = new Set();
 
-/** Dynamic bypass domains added via Options page. */
-let dynamicBypassDomains = [];
-
-function extractDomain(pattern) {
-  return pattern.replace(/^\*:\/\/(?:\*\.)?/, "").replace(/\/\*$/, "");
-}
-
 /**
  * Restore session state from chrome.storage.session.
  * Awaited before any bypass logic so state survives SW restarts.
  */
 const ready = (async () => {
   try {
-    const [sessionData, localData] = await Promise.all([
-      chrome.storage.session.get(["bypassCache", "failureCounts", "fallbackDomains"]),
-      chrome.storage.local.get(["dynamicDomains"])
-    ]);
+    const sessionData = await chrome.storage.session.get(["bypassCache", "failureCounts", "fallbackDomains"]);
     
     if (sessionData.bypassCache) {
       for (const [k, v] of Object.entries(sessionData.bypassCache))
@@ -54,21 +44,10 @@ const ready = (async () => {
     if (sessionData.fallbackDomains) {
       for (const d of sessionData.fallbackDomains) fallbackDomains.add(d);
     }
-    
-    if (localData.dynamicDomains?.bypass) {
-      dynamicBypassDomains = localData.dynamicDomains.bypass.map(extractDomain);
-    }
   } catch (e) {
     console.warn("[DM] Session restore failed:", e);
   }
 })();
-
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && changes.dynamicDomains) {
-    const bypass = changes.dynamicDomains.newValue?.bypass || [];
-    dynamicBypassDomains = bypass.map(extractDomain);
-  }
-});
 
 /** Persist all session state. */
 function persistState() {
@@ -99,21 +78,6 @@ async function fetchHTML(url) {
   return res.text();
 }
 
-// ─── Logging ───────────────────────────────────────────────────────────────
-
-const MAX_LOGS = 10;
-async function addLog(title, message, status = "info") {
-  try {
-    const data = await chrome.storage.local.get(["bypassLogs"]);
-    const logs = data.bypassLogs || [];
-    logs.unshift({ title, message, status, timestamp: Date.now() });
-    if (logs.length > MAX_LOGS) logs.pop();
-    await chrome.storage.local.set({ bypassLogs: logs });
-  } catch (e) {
-    console.warn("[DM] Failed to add log", e);
-  }
-}
-
 // ─── Security ──────────────────────────────────────────────────────────────
 
 /** True only for http/https URLs. */
@@ -131,7 +95,7 @@ function isAllowedBypassUrl(url) {
   if (!isHttpUrl(url)) return false;
   const h = new URL(url).hostname;
   if (h === "gyanigurus.xyz" || h.endsWith(".gyanigurus.xyz")) return true;
-  return dynamicBypassDomains.some(domain => h === domain || h.endsWith("." + domain));
+  return false;
 }
 
 // ─── Headless Bypass — Full Chain ──────────────────────────────────────────
@@ -314,22 +278,17 @@ const actions = {
 };
 
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
-  if (req.action === "add_log") {
-    addLog(req.payload.title, req.payload.message, req.payload.status);
-    sendResponse({ success: true });
-    return false;
-  }
 
   if (req.action === "full_bypass") {
-    addLog("Bypass Started", `Headless fetch for ${new URL(req.payload.url).hostname}`, "info");
+    console.log("[DM] Bypass Started:", req.payload.url);
     resolveFullChain(req.payload.url)
       .then((result) => {
-        addLog("Download Started", "Successfully resolved final download link.", "success");
+        console.log("[DM] Download Started");
         chrome.downloads.download({ url: result.downloadUrl });
         sendResponse({ success: true });
       })
       .catch((err) => {
-        addLog("Headless Failed", err.message, "error");
+        console.warn("[DM] Headless Failed:", err.message);
         sendResponse({ success: false, error: err.message });
       });
     return true;
@@ -339,12 +298,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     actions.bypass_gyanigurus(req.payload)
       .then((res) => {
         if (res.success) {
-          addLog("Tab Fallback", "Headless failed, using background tab for GDFlix.", "warning");
+          console.log("[DM] Tab Fallback: Headless failed, using background tab for GDFlix.");
         }
         sendResponse(res);
       })
       .catch((err) => {
-        addLog("Tab Fallback Failed", err.message, "error");
+        console.warn("[DM] Tab Fallback Failed:", err.message);
         sendResponse({ success: false, error: err.message });
       });
     return true;
