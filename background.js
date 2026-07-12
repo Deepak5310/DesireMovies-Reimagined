@@ -1,6 +1,13 @@
 "use strict";
 const activeBypasses = new Map();
 const bypassCache = new Map();
+
+const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
+const INSTANT_DL_RE = /href=["'](https?:\/\/[^"'\s]*busycdn\.[a-z0-9.]+\/[^"'\s]+)['"]/i;
+
+const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
+const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
+
 const ready = (async () => {
   try {
     const sessionData = await chrome.storage.session.get(["bypassCache"]);
@@ -9,9 +16,11 @@ const ready = (async () => {
     }
   } catch (e) {}
 })();
+
 function persistState() {
   chrome.storage.session.set({ bypassCache: Object.fromEntries(bypassCache) }).catch(() => {});
 }
+
 async function fetchWithTimeout(url, options = {}, ms = 8000) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
@@ -19,19 +28,25 @@ async function fetchWithTimeout(url, options = {}, ms = 8000) {
     return await fetch(url, { ...options, signal: ctrl.signal });
   } finally { clearTimeout(id); }
 }
+
 async function fetchHTML(url) {
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${new URL(url).hostname}`);
   return res.text();
 }
+
 function isAllowedBypassUrl(url) {
-  try {
-    const p = new URL(url);
-    return (p.protocol === "http:" || p.protocol === "https:") && (p.hostname === "gyanigurus.xyz" || p.hostname.endsWith(".gyanigurus.xyz"));
-  } catch { return false; }
+  return RE_GYANIGURUS.test(url);
 }
-const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"']*gdflix[^"']*)['"]/i;
-const INSTANT_DL_RE = /href=["'](https?:\/\/instant\.busycdn\.xyz\/[^"']+)['"]/i;
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading" && tab.url && RE_DESIREMOVIES.test(tab.url)) {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ["content.js"]
+    }).catch(() => {});
+  }
+});
 async function resolveFullChain(url) {
   await ready;
   if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };

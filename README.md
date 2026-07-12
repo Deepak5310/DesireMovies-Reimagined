@@ -74,37 +74,23 @@ No configuration required. Once loaded:
 
 ```
 DesireMovies-Reimagined/
-├── manifest.json     — MV3 manifest with strict domain-scoped permissions
-├── background.js     — Service worker: headless chain bypass and filename cleaning
-├── content.js        — Content script: intercepts clicks on DesireMovies
+├── manifest.json     — MV3 manifest with global host permissions and scripting capabilities
+├── background.js     — Service worker: dynamic script injection, headless bypass, and filename cleaning
+├── content.js        — Content script: intercepts clicks on Gyanigurus redirect links
 └── icons/            — Extension icons
 ```
 
 ---
 
-## How to Update Domains Manually
+## Automated Domain & TLD Handling
 
-Target sites often change their TLDs (e.g., from `.dad` to `.mom` or `.io` to `.dev`) to evade blocks. If the extension stops working because a domain changed, here is exactly how to update it:
+Target sites often change their TLDs (e.g., from `.dad` to `.mom`, `.xyz` to `.live`, or `.io` to `.dev`) to bypass restrictions. This extension is designed to **automatically adapt** to these changes without requiring any code modifications:
 
-### 1. If DesireMovies Changes Domain
-If the main site changes (e.g., `1desiremovies.dad` moves to `1desiremovies.cat`):
-* Open `manifest.json`.
-* Under `content_scripts`, update the `matches` array:
-  ```json
-  "matches": ["*://*.1desiremovies.cat/*"]
-  ```
+1. **DesireMovies Domain Changes:** The extension service worker listens to page loads and dynamically injects the content script into any hostname containing `"desiremovies"`.
+2. **Redirect Link Interception:** The content script detects and intercepts links whose hostname contains `"gyanigurus"`, regardless of the TLD.
+3. **Bypass Chain Matching:** The background script matches redirect and download paths using wildcard-TLD regular expressions (e.g., matching any TLD for `busycdn.[a-z0-9.]+`).
 
-### 2. If Gyanigurus Changes Domain
-Gyanigurus is the first hop in the chain. If it changes:
-* Open `manifest.json` and update the `host_permissions` array with the new domain.
-* Open `background.js`, locate `function isAllowedBypassUrl(url)`, and change the hardcoded string `"gyanigurus.xyz"` to the new domain.
-
-### 3. If GDFlix, BusyCDN, or FastCDN Change Domains
-These are the intermediate and final hops. If they change:
-* Open `manifest.json` and update the `host_permissions` array with the new domains. If you don't update this, Chrome will block the background fetch with a CORS error!
-* Open `background.js` and locate the pre-compiled regexes near the top:
-  * Update `GDFLIX_HREF_RE` if GDFlix changes.
-  * Update `INSTANT_DL_RE` if the BusyCDN URL structure changes.
+No manual domain updates are necessary.
 
 ---
 
@@ -114,10 +100,11 @@ These are the intermediate and final hops. If they change:
 |---|---|
 | `downloads` | Used to trigger the final download and clean filenames (`onDeterminingFilename`). |
 | `storage` | Used to persist the bypass cache across service-worker restarts (`chrome.storage.session`). |
-| `host_permissions` | Strict permissions required by Chrome to allow `fetch()` requests to the specific intermediate domains in the background. |
+| `scripting` | Allows dynamic injection of content scripts onto DesireMovies domains. |
+| `host_permissions` | Contains `"<all_urls>"` to allow headless fetch requests to the dynamically changing intermediate and final bypass endpoints. |
 
-- Headless fetch is strictly restricted to `gyanigurus.xyz` via an allowlist.
-- Content scripts inject only on the listed DesireMovies domains.
+- Headless fetch targets are verified using fast pattern matching.
+- Content scripts inject only on pages whose hostnames match the `"desiremovies"` pattern.
 - Zero analytics, zero tracking, no data sent to external servers.
 
 ---

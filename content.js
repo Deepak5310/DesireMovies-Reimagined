@@ -1,5 +1,8 @@
 (function(){
   "use strict";
+  if (window.__desiremoviesBypassInjected) return;
+  window.__desiremoviesBypassInjected = true;
+
   function sendBg(action, payload = {}) {
     return new Promise((resolve, reject) => {
       try {
@@ -28,11 +31,16 @@
       delete anchor.dataset.bypassing;
     };
   }
+
   document.addEventListener("click", async (e) => {
     const anchor = e.target.closest("a");
     if (!anchor) return;
     const href = anchor.getAttribute("href");
-    if (!href || !href.includes("gyanigurus") || anchor.dataset.bypassing) return;
+    if (!href || anchor.dataset.bypassing) return;
+
+    const isBypassUrl = /^https?:\/\/[^/]*gyanigurus/i.test(href);
+    if (!isBypassUrl) return;
+
     e.preventDefault();
     e.stopPropagation();
     const restore = showStatus(anchor, "⏳ Bypassing…");

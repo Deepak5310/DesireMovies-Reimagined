@@ -10,19 +10,8 @@
     "128": "icons/icon128.png"
   },
   "background": { "service_worker": "background.js" },
-  "permissions": ["downloads", "storage"],
+  "permissions": ["downloads", "storage", "scripting"],
   "host_permissions": [
-    "*://*.gdflix.io/*",
-    "*://*.gdflix.dev/*",
-    "*://*.busycdn.xyz/*",
-    "*://*.gyanigurus.xyz/*",
-    "*://*.fastcdn-dl.pages.dev/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": ["*://*.1desiremovies.dad/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
+    "<all_urls>"
   ]
 }
