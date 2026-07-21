@@ -14,12 +14,9 @@
       }
     });
   }
+
   function showStatus(anchor, text) {
-    const saved = {
-      html: anchor.innerHTML,
-      pointerEvents: anchor.style.pointerEvents,
-      cursor: anchor.style.cursor,
-    };
+    const saved = { html: anchor.innerHTML, pointerEvents: anchor.style.pointerEvents, cursor: anchor.style.cursor };
     anchor.innerHTML = `<span style="opacity:0.8">${text}</span>`;
     anchor.style.pointerEvents = "none";
     anchor.style.cursor = "wait";
@@ -32,14 +29,14 @@
     };
   }
 
+  // Intercept click on bypass links
   document.addEventListener("click", async (e) => {
     const anchor = e.target.closest("a");
     if (!anchor) return;
     const href = anchor.getAttribute("href");
     if (!href || anchor.dataset.bypassing) return;
 
-    const isBypassUrl = /^https?:\/\/[^/]*(gyanigurus|kmhd)/i.test(href);
-    if (!isBypassUrl) return;
+    if (!/^https?:\/\/[^/]*(gyanigurus|kmhd)/i.test(href)) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -52,10 +49,10 @@
         return;
       }
       showStatus(anchor, "❌ Failed");
-      window.open(href, '_blank');
+      window.open(href, "_blank");
     } catch (err) {
       showStatus(anchor, "❌ Error");
-      window.open(href, '_blank');
+      window.open(href, "_blank");
     } finally {
       setTimeout(restore, 2000);
     }

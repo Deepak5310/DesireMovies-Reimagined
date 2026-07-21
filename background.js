@@ -2,14 +2,15 @@
 const activeBypasses = new Map();
 const bypassCache = new Map();
 
+// Matching Patterns
 const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
 const INSTANT_DL_RE = /href=["'](https?:\/\/[^"'\s]*busycdn\.[a-z0-9.]+\/[^"'\s]+)['"]/i;
-
 const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
 const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
 const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
 const RE_KMHD = /^https?:\/\/[^/]*kmhd/i;
 
+// Cache Persistence
 const ready = (async () => {
   try {
     const sessionData = await chrome.storage.session.get(["bypassCache"]);
@@ -41,25 +42,24 @@ function isAllowedBypassUrl(url) {
   return RE_GYANIGURUS.test(url) || RE_KMHD.test(url);
 }
 
+// Inject content script on target site loads
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url))) {
-    chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      files: ["content.js"]
-    }).catch(() => {});
+    chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
   }
 });
+
+// Headless redirect chain resolver
 async function resolveFullChain(url) {
   await ready;
   if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
+
   let gdflixUrl = "";
   if (RE_KMHD.test(url)) {
     const fileId = url.match(/\/file\/([a-zA-Z0-9_-]+)/)?.[1];
     if (!fileId) throw new Error("Could not extract file ID from KMHD URL");
     const origin = new URL(url).origin;
-    const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, {
-      method: "POST"
-    });
+    const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, { method: "POST" });
     if (!touchRes.ok) throw new Error(`HTTP ${touchRes.status} on KMHD API`);
     const touchData = await touchRes.json();
     if (!touchData?.linkId) throw new Error("GDFlix linkId not found in KMHD API response");
@@ -69,8 +69,8 @@ async function resolveFullChain(url) {
     let match = html1.match(GDFLIX_HREF_RE);
     if (!match) {
       const body = new URLSearchParams();
-      for (const match of html1.matchAll(/<input[^>]+>/gi)) {
-        const tag = match[0];
+      for (const m of html1.matchAll(/<input[^>]+>/gi)) {
+        const tag = m[0];
         if (/type=["']?hidden["']?/i.test(tag)) {
           const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
           const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
@@ -84,23 +84,27 @@ async function resolveFullChain(url) {
     if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
     gdflixUrl = match[1];
   }
+
   const html2 = await fetchHTML(gdflixUrl);
   const instantMatch = html2.match(INSTANT_DL_RE);
   if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
-  const busycdnUrl = instantMatch[1];
-  const redirectRes = await fetchWithTimeout(busycdnUrl);
+
+  const redirectRes = await fetchWithTimeout(instantMatch[1]);
   const parsedUrl = new URL(redirectRes.url);
   const finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
   if (!finalUrl) throw new Error("Could not resolve final download URL");
+
   bypassCache.set(url, finalUrl);
   persistState();
   return { success: true, downloadUrl: finalUrl };
 }
+
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   if (req.action === "full_bypass") {
     const url = req.payload?.url;
     if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
     if (!isAllowedBypassUrl(url)) { sendResponse({ success: false, error: "URL not in bypass allowlist" }); return false; }
+
     let promise = activeBypasses.get(url);
     if (!promise) {
       promise = ready.then(() => resolveFullChain(url));
@@ -118,6 +122,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   sendResponse({ success: false, error: `Unknown action: ${req.action}` });
   return false;
 });
+
+// Filename Cleaning Logic
 const RE_TRAILING_DUP = /\s*\(\d+\)$/;
 const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
 const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
@@ -129,12 +135,14 @@ const RE_DOT_PLACEHOLDER = /_DOT_/g;
 const RE_NON_ALNUM = /[^a-zA-Z0-9\-.]/g;
 const RE_MULTI_SPACE = /\s+/g;
 const RE_TRAILING_PUNCT = /[-.]+$/;
+
 function cleanFilename(filename) {
   const dotIdx = filename.lastIndexOf(".");
   if (dotIdx === -1) return filename;
   const ext = filename.slice(dotIdx);
   let base = filename.slice(0, dotIdx);
   let epTag = "";
+
   base = base.replace(RE_TRAILING_DUP, "").replace(RE_BRACKETS, " ");
   base = base.replace(RE_EP_PREFIX, (_, group) => {
     const nums = group.split(".").filter(Boolean).map(Number);
@@ -142,6 +150,7 @@ function cleanFilename(filename) {
     epTag = nums[0] === nums.at(-1) ? `EP${pad(nums[0])}` : `EP${pad(nums[0])}-${pad(nums.at(-1))}`;
     return "";
   });
+
   const clean = base
     .replace(RE_BRANDING, "")
     .replace(RE_SEASON, epTag ? `$1 ${epTag}` : "$1")
@@ -166,6 +175,7 @@ function cleanFilename(filename) {
     .join(" ");
   return clean + ext;
 }
+
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   if (item.byExtensionId !== chrome.runtime.id) { suggest(); return; }
   try {
