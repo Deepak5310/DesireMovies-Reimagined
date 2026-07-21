@@ -7,6 +7,7 @@ const INSTANT_DL_RE = /href=["'](https?:\/\/[^"'\s]*busycdn\.[a-z0-9.]+\/[^"'\s]
 
 const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
 const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
+const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
 
 const ready = (async () => {
   try {
@@ -40,7 +41,7 @@ function isAllowedBypassUrl(url) {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && tab.url && RE_DESIREMOVIES.test(tab.url)) {
+  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url))) {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       files: ["content.js"]
