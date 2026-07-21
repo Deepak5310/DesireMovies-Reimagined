@@ -99,7 +99,7 @@ async function resolveFullChain(url) {
   return { success: true, downloadUrl: finalUrl };
 }
 
-chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
   if (req.action === "full_bypass") {
     const url = req.payload?.url;
     if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
