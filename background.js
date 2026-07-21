@@ -166,6 +166,7 @@ function cleanFilename(filename) {
   return clean + ext;
 }
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  if (item.byExtensionId !== chrome.runtime.id) { suggest(); return; }
   try {
     suggest({ filename: cleanFilename(item.filename) });
   } catch (e) {
