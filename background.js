@@ -8,6 +8,7 @@ const INSTANT_DL_RE = /href=["'](https?:\/\/[^"'\s]*busycdn\.[a-z0-9.]+\/[^"'\s]
 const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
 const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
 const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
+const RE_KMHD = /^https?:\/\/[^/]*kmhd/i;
 
 const ready = (async () => {
   try {
@@ -37,7 +38,7 @@ async function fetchHTML(url) {
 }
 
 function isAllowedBypassUrl(url) {
-  return RE_GYANIGURUS.test(url);
+  return RE_GYANIGURUS.test(url) || RE_KMHD.test(url);
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -51,24 +52,38 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 async function resolveFullChain(url) {
   await ready;
   if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
-  const html1 = await fetchHTML(url);
-  let match = html1.match(GDFLIX_HREF_RE);
-  if (!match) {
-    const body = new URLSearchParams();
-    for (const match of html1.matchAll(/<input[^>]+>/gi)) {
-      const tag = match[0];
-      if (/type=["']?hidden["']?/i.test(tag)) {
-        const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
-        const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
-        if (name) body.append(name, value);
+  let gdflixUrl = "";
+  if (RE_KMHD.test(url)) {
+    const fileId = url.match(/\/file\/([a-zA-Z0-9_-]+)/)?.[1];
+    if (!fileId) throw new Error("Could not extract file ID from KMHD URL");
+    const origin = new URL(url).origin;
+    const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, {
+      method: "POST"
+    });
+    if (!touchRes.ok) throw new Error(`HTTP ${touchRes.status} on KMHD API`);
+    const touchData = await touchRes.json();
+    if (!touchData?.linkId) throw new Error("GDFlix linkId not found in KMHD API response");
+    gdflixUrl = touchData.linkId;
+  } else {
+    const html1 = await fetchHTML(url);
+    let match = html1.match(GDFLIX_HREF_RE);
+    if (!match) {
+      const body = new URLSearchParams();
+      for (const match of html1.matchAll(/<input[^>]+>/gi)) {
+        const tag = match[0];
+        if (/type=["']?hidden["']?/i.test(tag)) {
+          const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
+          const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
+          if (name) body.append(name, value);
+        }
       }
+      const res2 = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
+      if (!res2.ok) throw new Error(`HTTP ${res2.status} on Gyanigurus POST`);
+      match = (await res2.text()).match(GDFLIX_HREF_RE);
     }
-    const res2 = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
-    if (!res2.ok) throw new Error(`HTTP ${res2.status} on Gyanigurus POST`);
-    match = (await res2.text()).match(GDFLIX_HREF_RE);
+    if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
+    gdflixUrl = match[1];
   }
-  if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
-  const gdflixUrl = match[1];
   const html2 = await fetchHTML(gdflixUrl);
   const instantMatch = html2.match(INSTANT_DL_RE);
   if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
@@ -105,7 +120,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 const RE_TRAILING_DUP = /\s*\(\d+\)$/;
 const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
 const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
-const RE_BRANDING = /[-\s]*\b(desiremovies)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|x264|x265)\b/gi;
+const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd|kmhd)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|x264|x265)\b/gi;
 const RE_SEASON = /\b(S\d{2})\b/gi;
 const RE_AUDIO_DOTS = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
 const RE_ALL_DOTS = /\./g;

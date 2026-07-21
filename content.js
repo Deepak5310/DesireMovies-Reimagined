@@ -38,7 +38,7 @@
     const href = anchor.getAttribute("href");
     if (!href || anchor.dataset.bypassing) return;
 
-    const isBypassUrl = /^https?:\/\/[^/]*gyanigurus/i.test(href);
+    const isBypassUrl = /^https?:\/\/[^/]*(gyanigurus|kmhd)/i.test(href);
     if (!isBypassUrl) return;
 
     e.preventDefault();
