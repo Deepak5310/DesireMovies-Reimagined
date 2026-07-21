@@ -89,8 +89,9 @@ async function resolveFullChain(url) {
   if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
   const busycdnUrl = instantMatch[1];
   const redirectRes = await fetchWithTimeout(busycdnUrl);
-  const finalUrl = new URL(redirectRes.url).searchParams.get("url");
-  if (!finalUrl) throw new Error("No ?url= param in redirect destination");
+  const parsedUrl = new URL(redirectRes.url);
+  const finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
+  if (!finalUrl) throw new Error("Could not resolve final download URL");
   bypassCache.set(url, finalUrl);
   persistState();
   return { success: true, downloadUrl: finalUrl };
