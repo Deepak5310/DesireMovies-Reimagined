@@ -9,6 +9,7 @@ const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
 const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
 const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
 const RE_KMHD = /^https?:\/\/[^/]*kmhd/i;
+const RE_MOVIESBABA = /^https?:\/\/[^/]*moviesbaba/i;
 
 // Cache Persistence
 const ready = (async () => {
@@ -51,7 +52,7 @@ function isAllowedBypassUrl(url) {
 
 // Inject content script on target site loads
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url))) {
+  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url) || RE_MOVIESBABA.test(tab.url))) {
     chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
   }
 });
@@ -134,7 +135,7 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
 const RE_TRAILING_DUP = /\s*\(\d+\)$/;
 const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
 const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
-const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd|kmhd)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|x264|x265)\b/gi;
+const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd|kmhd|moviesbaba)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|x264|x265)\b/gi;
 const RE_SEASON = /\b(S\d{2})\b/gi;
 const RE_AUDIO_DOTS = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
 const RE_ALL_DOTS = /\./g;

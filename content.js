@@ -36,7 +36,7 @@
     const href = anchor.getAttribute("href");
     if (!href || anchor.dataset.bypassing) return;
 
-    if (!/^https?:\/\/[^/]*(gyanigurus|kmhd)/i.test(href)) return;
+    if (!/^https?:\/\/[^/]*(gyanigurus|kmhd|moviesbaba)/i.test(href)) return;
 
     e.preventDefault();
     e.stopPropagation();
