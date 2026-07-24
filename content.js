@@ -43,7 +43,8 @@
         btn.disabled = true;
         btn.innerHTML = "⏳ Resolving All Episodes...";
         try {
-          const res = await sendBg("bypass_pack", { url: window.location.href });
+          const domLinks = [...document.querySelectorAll('a[href*="/file/"]')].map(a => a.href).filter(Boolean);
+          const res = await sendBg("bypass_pack", { url: window.location.href, fileUrls: domLinks });
           if (res?.success) {
             btn.innerHTML = `✅ All ${res.count} Downloads Started!`;
             btn.style.background = "#28a745";
@@ -80,7 +81,7 @@
     const href = anchor.getAttribute("href");
     if (!href || anchor.dataset.bypassing) return;
 
-    if (!/^https?:\/\/[^/]*(gyanigurus|kmhd|moviesbaba)/i.test(href)) return;
+    if (!/^https?:\/\/[^/]*(gyanigurus|kmhd|moviesbaba|gdflix)/i.test(href)) return;
     if (/\/pack\//i.test(href)) return;
 
     e.preventDefault();

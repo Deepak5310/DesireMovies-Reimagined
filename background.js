@@ -10,6 +10,7 @@ const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
 const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
 const RE_KMHD = /^https?:\/\/[^/]*kmhd/i;
 const RE_MOVIESBABA = /^https?:\/\/[^/]*moviesbaba/i;
+const RE_GDFLIX = /^https?:\/\/[^/]*(gdflix|gd\.kmhd)/i;
 
 // Cache Persistence
 const ready = (async () => {
@@ -40,12 +41,12 @@ async function fetchHTML(url) {
 }
 
 function isAllowedBypassUrl(url) {
-  return RE_GYANIGURUS.test(url) || RE_KMHD.test(url);
+  return RE_GYANIGURUS.test(url) || RE_KMHD.test(url) || RE_GDFLIX.test(url);
 }
 
 // Inject content script on target site loads
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url) || RE_MOVIESBABA.test(tab.url) || RE_KMHD.test(tab.url))) {
+  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url) || RE_MOVIESBABA.test(tab.url) || RE_KMHD.test(tab.url) || RE_GDFLIX.test(tab.url))) {
     chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
   }
 });
@@ -95,6 +96,15 @@ async function resolveFullChain(url) {
         if (dlMatch) finalUrl = dlMatch[1];
       }
     }
+  } else if (RE_GDFLIX.test(url)) {
+    // Direct GDFlix URL flow (e.g. gdflix.dev/file/...)
+    const html = await fetchHTML(url);
+    const instantMatch = html.match(INSTANT_DL_RE);
+    if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
+
+    const redirectRes = await fetchWithTimeout(instantMatch[1]);
+    const parsedUrl = new URL(redirectRes.url);
+    finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
   } else {
     // Gyanigurus flow (DesireMovies)
     const html1 = await fetchHTML(url);
@@ -131,32 +141,37 @@ async function resolveFullChain(url) {
   return { success: true, downloadUrl: finalUrl };
 }
 
-async function resolvePackChain(packUrl) {
+async function resolvePackChain(packUrl, providedFileUrls = []) {
   await ready;
-  const packId = packUrl.match(/\/pack\/([a-zA-Z0-9_-]+)/)?.[1];
-  if (!packId) throw new Error("Invalid pack URL");
-
   const origin = new URL(packUrl).origin;
-  let packData = null;
+  let fileUrls = Array.isArray(providedFileUrls) && providedFileUrls.length ? providedFileUrls : [];
 
-  try {
-    const res = await fetchWithTimeout(`https://api.dandndn.one/api/v1/pack/${packId}`);
-    if (res.ok) packData = await res.json();
-  } catch (e) {}
+  if (!fileUrls.length) {
+    const packId = packUrl.match(/\/pack\/([a-zA-Z0-9_-]+)/)?.[1];
+    if (packId) {
+      try {
+        const res = await fetchWithTimeout(`https://api.dandndn.one/api/v1/pack/${packId}`);
+        if (res.ok) {
+          const packData = await res.json();
+          const fileIds = Object.keys(packData?.info || {});
+          if (fileIds.length) fileUrls = fileIds.map(id => `${origin}/file/${id}`);
+        }
+      } catch (e) {}
+    }
+  }
 
-  if (!packData?.info) {
+  if (!fileUrls.length) {
     try {
-      const res = await fetchWithTimeout(`${origin}/api/v1/pack/${packId}`);
-      if (res.ok) packData = await res.json();
+      const html = await fetchHTML(packUrl);
+      const matches = [...html.matchAll(/href=["']([^"']*\/(?:file)\/[a-zA-Z0-9_-]+)["']/gi)];
+      fileUrls = [...new Set(matches.map(m => m[1].startsWith("http") ? m[1] : `${origin}${m[1]}`))];
     } catch (e) {}
   }
 
-  const fileIds = Object.keys(packData?.info || {});
-  if (!fileIds.length) throw new Error("No episodes found in pack");
+  if (!fileUrls.length) throw new Error("No episodes found in pack");
 
   let startedCount = 0;
-  for (const fileId of fileIds) {
-    const fileUrl = `${origin}/file/${fileId}`;
+  for (const fileUrl of fileUrls) {
     try {
       const result = await resolveFullChain(fileUrl);
       if (result?.downloadUrl) {
@@ -166,14 +181,15 @@ async function resolvePackChain(packUrl) {
     } catch (e) {}
   }
 
-  return { success: startedCount > 0, count: startedCount, total: fileIds.length };
+  return { success: startedCount > 0, count: startedCount, total: fileUrls.length };
 }
 
 chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
   if (req.action === "bypass_pack") {
     const url = req.payload?.url;
+    const fileUrls = req.payload?.fileUrls;
     if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
-    resolvePackChain(url)
+    resolvePackChain(url, fileUrls)
       .then((res) => sendResponse(res))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
