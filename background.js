@@ -131,7 +131,53 @@ async function resolveFullChain(url) {
   return { success: true, downloadUrl: finalUrl };
 }
 
+async function resolvePackChain(packUrl) {
+  await ready;
+  const packId = packUrl.match(/\/pack\/([a-zA-Z0-9_-]+)/)?.[1];
+  if (!packId) throw new Error("Invalid pack URL");
+
+  const origin = new URL(packUrl).origin;
+  let packData = null;
+
+  try {
+    const res = await fetchWithTimeout(`https://api.dandndn.one/api/v1/pack/${packId}`);
+    if (res.ok) packData = await res.json();
+  } catch (e) {}
+
+  if (!packData?.info) {
+    try {
+      const res = await fetchWithTimeout(`${origin}/api/v1/pack/${packId}`);
+      if (res.ok) packData = await res.json();
+    } catch (e) {}
+  }
+
+  const fileIds = Object.keys(packData?.info || {});
+  if (!fileIds.length) throw new Error("No episodes found in pack");
+
+  let startedCount = 0;
+  for (const fileId of fileIds) {
+    const fileUrl = `${origin}/file/${fileId}`;
+    try {
+      const result = await resolveFullChain(fileUrl);
+      if (result?.downloadUrl) {
+        chrome.downloads.download({ url: result.downloadUrl });
+        startedCount++;
+      }
+    } catch (e) {}
+  }
+
+  return { success: startedCount > 0, count: startedCount, total: fileIds.length };
+}
+
 chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
+  if (req.action === "bypass_pack") {
+    const url = req.payload?.url;
+    if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
+    resolvePackChain(url)
+      .then((res) => sendResponse(res))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
   if (req.action === "full_bypass") {
     const url = req.payload?.url;
     if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
