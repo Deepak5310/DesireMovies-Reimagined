@@ -30,15 +30,15 @@
   }
 
   // Inject Download All Episodes button on pack pages
-  if (/\/pack\/[a-zA-Z0-9_-]+/i.test(window.location.pathname)) {
+  if (/\/pack\//i.test(window.location.pathname) || /\/pack\//i.test(window.location.href)) {
     const initPackBtn = () => {
       if (document.getElementById("btn-dl-all-episodes")) return;
       const btn = document.createElement("button");
       btn.id = "btn-dl-all-episodes";
       btn.innerHTML = "⚡ Download All Episodes";
-      btn.style.cssText = "position:fixed;bottom:20px;right:20px;z-index:999999;padding:12px 20px;background:#e50914;color:#fff;font-weight:bold;font-size:15px;border:none;border-radius:30px;box-shadow:0 4px 20px rgba(229,9,20,0.5);cursor:pointer;transition:transform 0.2s;";
-      btn.onmouseover = () => btn.style.transform = "scale(1.06)";
-      btn.onmouseout = () => btn.style.transform = "scale(1)";
+      btn.style.cssText = "position:fixed;bottom:25px;right:25px;z-index:2147483647;padding:14px 24px;background:#e50914;color:#ffffff;font-weight:bold;font-size:16px;font-family:sans-serif;border:none;border-radius:50px;box-shadow:0 6px 25px rgba(229,9,20,0.6);cursor:pointer;transition:all 0.2s ease;";
+      btn.onmouseover = () => { btn.style.transform = "scale(1.08)"; btn.style.boxShadow = "0 8px 30px rgba(229,9,20,0.8)"; };
+      btn.onmouseout = () => { btn.style.transform = "scale(1)"; btn.style.boxShadow = "0 6px 25px rgba(229,9,20,0.6)"; };
       btn.onclick = async () => {
         btn.disabled = true;
         btn.innerHTML = "⏳ Resolving All Episodes...";
@@ -48,11 +48,11 @@
             btn.innerHTML = `✅ All ${res.count} Downloads Started!`;
             btn.style.background = "#28a745";
           } else {
-            btn.innerHTML = "❌ Pack Download Failed";
+            btn.innerHTML = `❌ ${res?.error || "Failed"}`;
             btn.style.background = "#dc3545";
           }
         } catch (err) {
-          btn.innerHTML = "❌ Pack Error";
+          btn.innerHTML = "❌ Error";
           btn.style.background = "#dc3545";
         }
         setTimeout(() => {
@@ -61,13 +61,16 @@
           btn.style.background = "#e50914";
         }, 5000);
       };
-      document.body.appendChild(btn);
+      (document.body || document.documentElement).appendChild(btn);
     };
+
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", initPackBtn);
     } else {
       initPackBtn();
     }
+    setTimeout(initPackBtn, 800);
+    setTimeout(initPackBtn, 2000);
   }
 
   // Intercept click on bypass links

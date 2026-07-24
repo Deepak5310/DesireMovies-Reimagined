@@ -45,7 +45,7 @@ function isAllowedBypassUrl(url) {
 
 // Inject content script on target site loads
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url) || RE_MOVIESBABA.test(tab.url))) {
+  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url) || RE_MOVIESBABA.test(tab.url) || RE_KMHD.test(tab.url))) {
     chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
   }
 });
