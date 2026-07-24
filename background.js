@@ -55,17 +55,48 @@ async function resolveFullChain(url) {
   await ready;
   if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
 
-  let gdflixUrl = "";
+  let finalUrl = "";
+
   if (RE_KMHD.test(url)) {
     const fileId = url.match(/\/file\/([a-zA-Z0-9_-]+)/)?.[1];
-    if (!fileId) throw new Error("Could not extract file ID from KMHD URL");
+    if (!fileId) throw new Error("Not a single file download link");
     const origin = new URL(url).origin;
-    const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, { method: "POST" });
-    if (!touchRes.ok) throw new Error(`HTTP ${touchRes.status} on KMHD API`);
-    const touchData = await touchRes.json();
-    if (!touchData?.linkId) throw new Error("GDFlix linkId not found in KMHD API response");
-    gdflixUrl = touchData.linkId;
+
+    // Try GDFlix first
+    try {
+      const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, { method: "POST" });
+      if (touchRes.ok) {
+        const touchData = await touchRes.json();
+        if (touchData?.linkId) {
+          const html2 = await fetchHTML(touchData.linkId);
+          const instantMatch = html2.match(INSTANT_DL_RE);
+          if (instantMatch) {
+            const redirectRes = await fetchWithTimeout(instantMatch[1]);
+            const parsedUrl = new URL(redirectRes.url);
+            finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
+          }
+        }
+      }
+    } catch (e) {}
+
+    // Fallback to HubDrive if GDFlix was blocked by Cloudflare or failed
+    if (!finalUrl) {
+      const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=hubdrive_res`, { method: "POST" });
+      if (!touchRes.ok) throw new Error(`HTTP ${touchRes.status} on KMHD HubDrive API`);
+      const touchData = await touchRes.json();
+      if (!touchData?.linkId) throw new Error("Download link not found in KMHD API response");
+
+      const hubUrl = touchData.linkId.replace(/hubcloud\.[a-z0-9.]+/i, "hubcloud.club");
+      const hubHtml = await fetchHTML(hubUrl);
+      const sportMatch = hubHtml.match(/href=["'](https?:\/\/[^"'\s]*sportverse\.[^"'\s]+)["']/i);
+      if (sportMatch) {
+        const sportHtml = await fetchHTML(sportMatch[1]);
+        const dlMatch = sportHtml.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|busycdn|fastcdn|pixeldrain)[^"'\s]+)["']/i);
+        if (dlMatch) finalUrl = dlMatch[1];
+      }
+    }
   } else {
+    // Gyanigurus flow (DesireMovies)
     const html1 = await fetchHTML(url);
     let match = html1.match(GDFLIX_HREF_RE);
     if (!match) {
@@ -83,16 +114,16 @@ async function resolveFullChain(url) {
       match = (await res2.text()).match(GDFLIX_HREF_RE);
     }
     if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
-    gdflixUrl = match[1];
+
+    const html2 = await fetchHTML(match[1]);
+    const instantMatch = html2.match(INSTANT_DL_RE);
+    if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
+
+    const redirectRes = await fetchWithTimeout(instantMatch[1]);
+    const parsedUrl = new URL(redirectRes.url);
+    finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
   }
 
-  const html2 = await fetchHTML(gdflixUrl);
-  const instantMatch = html2.match(INSTANT_DL_RE);
-  if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
-
-  const redirectRes = await fetchWithTimeout(instantMatch[1]);
-  const parsedUrl = new URL(redirectRes.url);
-  const finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
   if (!finalUrl) throw new Error("Could not resolve final download URL");
 
   bypassCache.set(url, finalUrl);
