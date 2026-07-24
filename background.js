@@ -25,18 +25,11 @@ function persistState() {
   chrome.storage.session.set({ bypassCache: Object.fromEntries(bypassCache) }).catch(() => {});
 }
 
-const BROWSER_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-  "Accept-Language": "en-US,en;q=0.9"
-};
-
 async function fetchWithTimeout(url, options = {}, ms = 8000) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
-  const headers = { ...BROWSER_HEADERS, ...options.headers };
   try {
-    return await fetch(url, { ...options, headers, signal: ctrl.signal });
+    return await fetch(url, { ...options, signal: ctrl.signal });
   } finally { clearTimeout(id); }
 }
 
