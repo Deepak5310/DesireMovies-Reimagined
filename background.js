@@ -40,12 +40,14 @@ async function fetchHTML(url) {
   return res.text();
 }
 
-async function extractDownloadFromGDFlixHTML(html, pageUrl) {
+async function extractDownloadFromGDFlixHTML(html, pageUrl, onProgress) {
+  onProgress?.("⏳ Searching GDFlix stream…");
   // First check for direct video stream link on the page (busycdn / fastcdn / cloud-dl / workers / cloudflarestorage)
   let instantMatch = html.match(/href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i);
 
   // If not found or matched an ad button, check for GDFlix /cloud/ endpoint page
   if (!instantMatch || !/\.(?:mkv|mp4|avi|webm)|bytes=/i.test(instantMatch[1])) {
+    onProgress?.("⏳ Checking Cloudflare Worker endpoint…");
     const cloudMatch = html.match(/href=["']([^"']*\/(?:cloud)\/\d+\/[a-zA-Z0-9_-]+)["']/i);
     if (cloudMatch) {
       const cloudUrl = cloudMatch[1].startsWith("http") ? cloudMatch[1] : `${new URL(pageUrl).origin}${cloudMatch[1]}`;
@@ -57,6 +59,7 @@ async function extractDownloadFromGDFlixHTML(html, pageUrl) {
 
   if (!instantMatch) throw new Error("Direct video download link not found on GDFlix page");
 
+  onProgress?.("⏳ Preparing direct stream URL…");
   const rawUrl = instantMatch[1].replace(/&amp;/g, "&");
   const redirectRes = await fetchWithTimeout(rawUrl);
   const parsedUrl = new URL(redirectRes.url);
@@ -68,6 +71,12 @@ function isAllowedBypassUrl(url) {
   return RE_GYANIGURUS.test(url) || RE_KMHD.test(url) || RE_GDFLIX.test(url);
 }
 
+function sendProgress(tabId, targetUrl, statusText) {
+  if (tabId) {
+    chrome.tabs.sendMessage(tabId, { action: "bypass_progress", url: targetUrl, statusText }).catch(() => {});
+  }
+}
+
 // Inject content script on target site loads
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url) || RE_MOVIESBABA.test(tab.url) || RE_KMHD.test(tab.url) || RE_GDFLIX.test(tab.url))) {
@@ -76,36 +85,41 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 // Headless redirect chain resolver
-async function resolveFullChain(url) {
+async function resolveFullChain(url, onProgress) {
   await ready;
   if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
 
   let finalUrl = "";
 
   if (RE_KMHD.test(url)) {
+    onProgress?.("⏳ Requesting KMHD API…");
     const fileId = url.match(/\/file\/([a-zA-Z0-9_-]+)/)?.[1];
     if (!fileId) throw new Error("Not a single file download link");
     const origin = new URL(url).origin;
 
     // Try GDFlix first
     try {
+      onProgress?.("⏳ Checking KMHD GDFlix response…");
       const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, { method: "POST" });
       if (touchRes.ok) {
         const touchData = await touchRes.json();
         if (touchData?.linkId) {
+          onProgress?.("⏳ Fetching GDFlix page…");
           const html2 = await fetchHTML(touchData.linkId);
-          finalUrl = await extractDownloadFromGDFlixHTML(html2, touchData.linkId);
+          finalUrl = await extractDownloadFromGDFlixHTML(html2, touchData.linkId, onProgress);
         }
       }
     } catch (e) {}
 
     // Fallback to HubDrive if GDFlix was blocked by Cloudflare or failed
     if (!finalUrl) {
+      onProgress?.("⏳ Trying HubDrive fallback…");
       const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=hubdrive_res`, { method: "POST" });
       if (!touchRes.ok) throw new Error(`HTTP ${touchRes.status} on KMHD HubDrive API`);
       const touchData = await touchRes.json();
       if (!touchData?.linkId) throw new Error("Download link not found in KMHD API response");
 
+      onProgress?.("⏳ Fetching Sportverse direct link…");
       const hubUrl = touchData.linkId.replace(/hubcloud\.[a-z0-9.]+/i, "hubcloud.club");
       const hubHtml = await fetchHTML(hubUrl);
       const sportMatch = hubHtml.match(/href=["'](https?:\/\/[^"'\s]*sportverse\.[^"'\s]+)["']/i);
@@ -117,13 +131,16 @@ async function resolveFullChain(url) {
     }
   } else if (RE_GDFLIX.test(url)) {
     // Direct GDFlix URL flow (e.g. gdflix.dev/file/...)
+    onProgress?.("⏳ Connecting to GDFlix…");
     const html = await fetchHTML(url);
-    finalUrl = await extractDownloadFromGDFlixHTML(html, url);
+    finalUrl = await extractDownloadFromGDFlixHTML(html, url, onProgress);
   } else {
     // Gyanigurus flow (DesireMovies)
+    onProgress?.("⏳ Connecting to Gyanigurus…");
     const html1 = await fetchHTML(url);
     let match = html1.match(GDFLIX_HREF_RE);
     if (!match) {
+      onProgress?.("⏳ Submitting Gyanigurus form…");
       const body = new URLSearchParams();
       for (const m of html1.matchAll(/<input[^>]+>/gi)) {
         const tag = m[0];
@@ -139,8 +156,9 @@ async function resolveFullChain(url) {
     }
     if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
 
+    onProgress?.("⏳ Fetching GDFlix page…");
     const html2 = await fetchHTML(match[1]);
-    finalUrl = await extractDownloadFromGDFlixHTML(html2, match[1]);
+    finalUrl = await extractDownloadFromGDFlixHTML(html2, match[1], onProgress);
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
@@ -150,8 +168,9 @@ async function resolveFullChain(url) {
   return { success: true, downloadUrl: finalUrl };
 }
 
-async function resolvePackChain(packUrl, providedFileUrls = []) {
+async function resolvePackChain(packUrl, providedFileUrls = [], onProgress) {
   await ready;
+  onProgress?.("⏳ Scanning episode links…");
   const origin = new URL(packUrl).origin;
   let fileUrls = Array.isArray(providedFileUrls) && providedFileUrls.length ? providedFileUrls : [];
 
@@ -180,7 +199,10 @@ async function resolvePackChain(packUrl, providedFileUrls = []) {
   if (!fileUrls.length) throw new Error("No episodes found in pack");
 
   let startedCount = 0;
-  for (const fileUrl of fileUrls) {
+  const total = fileUrls.length;
+  for (let i = 0; i < total; i++) {
+    const fileUrl = fileUrls[i];
+    onProgress?.(`⏳ Episode ${i + 1}/${total}: Resolving stream…`);
     try {
       const result = await resolveFullChain(fileUrl);
       if (result?.downloadUrl) {
@@ -190,34 +212,38 @@ async function resolvePackChain(packUrl, providedFileUrls = []) {
     } catch (e) {}
   }
 
-  return { success: startedCount > 0, count: startedCount, total: fileUrls.length };
+  return { success: startedCount > 0, count: startedCount, total };
 }
 
-chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   if (req.action === "bypass_pack") {
     const url = req.payload?.url;
     const fileUrls = req.payload?.fileUrls;
+    const tabId = sender?.tab?.id;
     if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
-    resolvePackChain(url, fileUrls)
+    resolvePackChain(url, fileUrls, (msg) => sendProgress(tabId, url, msg))
       .then((res) => sendResponse(res))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
   if (req.action === "full_bypass") {
     const url = req.payload?.url;
+    const tabId = sender?.tab?.id;
     if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
     if (!isAllowedBypassUrl(url)) { sendResponse({ success: false, error: "URL not in bypass allowlist" }); return false; }
 
     let promise = activeBypasses.get(url);
     if (!promise) {
-      promise = ready.then(() => resolveFullChain(url));
+      promise = ready.then(() => resolveFullChain(url, (msg) => sendProgress(tabId, url, msg)));
       activeBypasses.set(url, promise);
       promise.finally(() => activeBypasses.delete(url));
     }
     promise.then((result) => {
+      sendProgress(tabId, url, "✅ Download started");
       chrome.downloads.download({ url: result.downloadUrl });
       sendResponse({ success: true });
     }).catch((err) => {
+      sendProgress(tabId, url, `❌ ${err.message}`);
       sendResponse({ success: false, error: err.message });
     });
     return true;

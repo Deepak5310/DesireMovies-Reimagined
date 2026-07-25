@@ -15,17 +15,40 @@
     });
   }
 
-  function showStatus(anchor, text) {
+  const activeAnchors = new Map();
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === "bypass_progress") {
+      const { url, statusText } = msg;
+
+      const packBtn = document.getElementById("btn-dl-all-episodes");
+      if (packBtn && packBtn.disabled && (/\/pack\//i.test(url) || url === window.location.href)) {
+        packBtn.innerHTML = statusText;
+      }
+
+      let anchor = activeAnchors.get(url);
+      if (!anchor) {
+        try { anchor = document.querySelector(`a[href="${CSS.escape(url)}"]`); } catch (e) {}
+      }
+      if (anchor && anchor.dataset.bypassing) {
+        anchor.innerHTML = `<span style="opacity:0.9">${statusText}</span>`;
+      }
+    }
+  });
+
+  function showStatus(anchor, text, url) {
     const saved = { html: anchor.innerHTML, pointerEvents: anchor.style.pointerEvents, cursor: anchor.style.cursor };
     anchor.innerHTML = `<span style="opacity:0.8">${text}</span>`;
     anchor.style.pointerEvents = "none";
     anchor.style.cursor = "wait";
     anchor.dataset.bypassing = "true";
+    if (url) activeAnchors.set(url, anchor);
     return () => {
       anchor.innerHTML = saved.html;
       anchor.style.pointerEvents = saved.pointerEvents;
       anchor.style.cursor = saved.cursor;
       delete anchor.dataset.bypassing;
+      if (url) activeAnchors.delete(url);
     };
   }
 
@@ -86,18 +109,18 @@
 
     e.preventDefault();
     e.stopPropagation();
-    const restore = showStatus(anchor, "⏳ Bypassing…");
+    const restore = showStatus(anchor, "⏳ Connecting…", href);
     try {
       const res = await sendBg("full_bypass", { url: href });
       if (res?.success) {
-        showStatus(anchor, "✅ Download started");
+        showStatus(anchor, "✅ Download started", href);
         setTimeout(restore, 3000);
         return;
       }
-      showStatus(anchor, "❌ Failed");
+      showStatus(anchor, "❌ Failed", href);
       window.open(href, "_blank");
     } catch (err) {
-      showStatus(anchor, "❌ Error");
+      showStatus(anchor, "❌ Error", href);
       window.open(href, "_blank");
     } finally {
       setTimeout(restore, 2000);
