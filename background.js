@@ -41,21 +41,27 @@ async function fetchHTML(url) {
 }
 
 async function extractDownloadFromGDFlixHTML(html, pageUrl) {
-  let instantMatch = html.match(INSTANT_DL_RE);
-  if (!instantMatch) {
-    const cloudMatch = html.match(/href=["']([^"']*\/(?:cloud)\/[^"'\s]+)["']/i);
+  // First check for direct video stream link on the page (busycdn / fastcdn / cloud-dl / workers / cloudflarestorage)
+  let instantMatch = html.match(/href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i);
+
+  // If not found or matched an ad button, check for GDFlix /cloud/ endpoint page
+  if (!instantMatch || !/\.(?:mkv|mp4|avi|webm)|bytes=/i.test(instantMatch[1])) {
+    const cloudMatch = html.match(/href=["']([^"']*\/(?:cloud)\/\d+\/[a-zA-Z0-9_-]+)["']/i);
     if (cloudMatch) {
       const cloudUrl = cloudMatch[1].startsWith("http") ? cloudMatch[1] : `${new URL(pageUrl).origin}${cloudMatch[1]}`;
       const cloudHtml = await fetchHTML(cloudUrl);
-      instantMatch = cloudHtml.match(INSTANT_DL_RE) || cloudHtml.match(/href=["'](https?:\/\/[^"'\s]*\.workers\.dev\/[^"'\s]+)["']/i);
+      const dlMatch = cloudHtml.match(/href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i);
+      if (dlMatch) instantMatch = dlMatch;
     }
   }
-  if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
+
+  if (!instantMatch) throw new Error("Direct video download link not found on GDFlix page");
 
   const rawUrl = instantMatch[1].replace(/&amp;/g, "&");
   const redirectRes = await fetchWithTimeout(rawUrl);
   const parsedUrl = new URL(redirectRes.url);
-  return parsedUrl.searchParams.get("url") || redirectRes.url;
+  const finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
+  return encodeURI(finalUrl);
 }
 
 function isAllowedBypassUrl(url) {
