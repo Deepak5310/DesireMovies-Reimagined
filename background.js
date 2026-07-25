@@ -1,10 +1,12 @@
 "use strict";
+
 const activeBypasses = new Map();
 const bypassCache = new Map();
 
-// Matching Patterns
+// Domain & Link Match Patterns
 const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
-const INSTANT_DL_RE = /href=["'](https?:\/\/[^"'\s]*(?:busycdn|foxcloud|fastcdn|workers\.dev|instant\.)[^"'\s]+)['"]/i;
+const RE_DIRECT_STREAM = /href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i;
+
 const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
 const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
 const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
@@ -40,27 +42,30 @@ async function fetchHTML(url) {
   return res.text();
 }
 
+function findDirectStreamMatch(html) {
+  return html.match(RE_DIRECT_STREAM);
+}
+
 async function extractDownloadFromGDFlixHTML(html, pageUrl, onProgress) {
   onProgress?.("⏳ Searching GDFlix stream…");
-  // First check for direct video stream link on the page (busycdn / fastcdn / cloud-dl / workers / cloudflarestorage)
-  let instantMatch = html.match(/href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i);
+  let match = findDirectStreamMatch(html);
 
-  // If not found or matched an ad button, check for GDFlix /cloud/ endpoint page
-  if (!instantMatch || !/\.(?:mkv|mp4|avi|webm)|bytes=/i.test(instantMatch[1])) {
+  // If missing or matched an ad button, query GDFlix /cloud/ endpoint
+  if (!match || !/\.(?:mkv|mp4|avi|webm)|bytes=/i.test(match[1])) {
     onProgress?.("⏳ Checking Cloudflare Worker endpoint…");
     const cloudMatch = html.match(/href=["']([^"']*\/(?:cloud)\/\d+\/[a-zA-Z0-9_-]+)["']/i);
     if (cloudMatch) {
       const cloudUrl = cloudMatch[1].startsWith("http") ? cloudMatch[1] : `${new URL(pageUrl).origin}${cloudMatch[1]}`;
       const cloudHtml = await fetchHTML(cloudUrl);
-      const dlMatch = cloudHtml.match(/href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i);
-      if (dlMatch) instantMatch = dlMatch;
+      const dlMatch = findDirectStreamMatch(cloudHtml);
+      if (dlMatch) match = dlMatch;
     }
   }
 
-  if (!instantMatch) throw new Error("Direct video download link not found on GDFlix page");
+  if (!match) throw new Error("Direct video download link not found on GDFlix page");
 
   onProgress?.("⏳ Preparing direct stream URL…");
-  const rawUrl = instantMatch[1].replace(/&amp;/g, "&");
+  const rawUrl = match[1].replace(/&amp;/g, "&");
   const redirectRes = await fetchWithTimeout(rawUrl);
   const parsedUrl = new URL(redirectRes.url);
   const finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
@@ -83,6 +88,21 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
   }
 });
+
+async function submitGyanigurusForm(url, html1) {
+  const body = new URLSearchParams();
+  for (const m of html1.matchAll(/<input[^>]+>/gi)) {
+    const tag = m[0];
+    if (/type=["']?hidden["']?/i.test(tag)) {
+      const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
+      const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
+      if (name) body.append(name, value);
+    }
+  }
+  const res = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on Gyanigurus POST`);
+  return res.text();
+}
 
 // Headless redirect chain resolver
 async function resolveFullChain(url, onProgress) {
@@ -141,18 +161,8 @@ async function resolveFullChain(url, onProgress) {
     let match = html1.match(GDFLIX_HREF_RE);
     if (!match) {
       onProgress?.("⏳ Submitting Gyanigurus form…");
-      const body = new URLSearchParams();
-      for (const m of html1.matchAll(/<input[^>]+>/gi)) {
-        const tag = m[0];
-        if (/type=["']?hidden["']?/i.test(tag)) {
-          const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
-          const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
-          if (name) body.append(name, value);
-        }
-      }
-      const res2 = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
-      if (!res2.ok) throw new Error(`HTTP ${res2.status} on Gyanigurus POST`);
-      match = (await res2.text()).match(GDFLIX_HREF_RE);
+      const htmlPost = await submitGyanigurusForm(url, html1);
+      match = htmlPost.match(GDFLIX_HREF_RE);
     }
     if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
 
@@ -265,6 +275,16 @@ const RE_NON_ALNUM = /[^a-zA-Z0-9\-.]/g;
 const RE_MULTI_SPACE = /\s+/g;
 const RE_TRAILING_PUNCT = /[-.]+$/;
 
+const WORD_MAP = new Map([
+  ["4k", "4K"],
+  ["web-dl", "WEB-DL"],
+  ["webdl", "WEB-DL"],
+  ["web-hdrip", "WEB-HDRip"],
+  ["webhdrip", "WEB-HDRip"],
+  ["bluray", "BluRay"],
+  ["webrip", "WEB-Rip"]
+]);
+
 function cleanFilename(filename) {
   const dotIdx = filename.lastIndexOf(".");
   if (dotIdx === -1) return filename;
@@ -292,16 +312,9 @@ function cleanFilename(filename) {
     .replace(RE_TRAILING_PUNCT, "")
     .split(" ")
     .filter(Boolean)
-    .map((w) => {
-      const lower = w.toLowerCase();
-      if (lower === "4k") return "4K";
-      if (lower === "web-dl" || lower === "webdl") return "WEB-DL";
-      if (lower === "web-hdrip" || lower === "webhdrip") return "WEB-HDRip";
-      if (lower === "bluray") return "BluRay";
-      if (lower === "webrip") return "WEB-Rip";
-      return w.charAt(0).toUpperCase() + w.slice(1);
-    })
+    .map((w) => WORD_MAP.get(w.toLowerCase()) || (w.charAt(0).toUpperCase() + w.slice(1)))
     .join(" ");
+
   return clean + ext;
 }
 

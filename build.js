@@ -38,7 +38,7 @@ firefoxManifest.browser_specific_settings = {
 };
 fs.writeFileSync(
   path.join(distFirefox, "manifest.json"),
-  JSON.stringify(firefoxManifest)
+  JSON.stringify(firefoxManifest, null, 2)
 );
 
 // Handle background.js
@@ -68,12 +68,6 @@ bgStr = bgStr.replace(
   }`,
 );
 
-// Patch RE_BRANDING
-bgStr = bgStr.replace(
-  /const RE_BRANDING = \/.+?\/gi;/,
-  "const RE_BRANDING = /[-\\s]*\\b(desiremovies|gdflix|download)[\\w\\-.]*\\b|\\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|x264|x265)\\b/gi;",
-);
-
 // Patch cleanFilename to handle missing extensions
 bgStr = bgStr.replace(
   `  const dotIdx = filename.lastIndexOf(".");
@@ -91,14 +85,15 @@ bgStr = bgStr.replace(
   }`,
 );
 
-// Remove onDeterminingFilename listener
+// Remove onDeterminingFilename listener for Firefox
 bgStr = bgStr.replace(
   /chrome\.downloads\.onDeterminingFilename\.addListener\([\s\S]+/,
   "",
 );
 
-// We need to inject the fetch for Content-Disposition in full_bypass handling
+// Patch full_bypass download handling for Firefox
 const ffDownloadLogic = `promise.then((result) => {
+      sendProgress(tabId, url, "✅ Download started");
       if (result.title) {
           const cleaned = cleanFilename(decodeURIComponent(result.title));
           chrome.downloads.download({ url: result.downloadUrl, filename: cleaned });
@@ -108,7 +103,6 @@ const ffDownloadLogic = `promise.then((result) => {
       sendResponse({ success: true });
     })`;
 
-// Replace the download triggering code
 bgStr = bgStr.replace(
   /promise\.then\(\(result\) => \{[\s\S]*?sendResponse\(\{ success: true \}\);\s*\}\)/,
   ffDownloadLogic,

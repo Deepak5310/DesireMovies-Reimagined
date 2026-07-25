@@ -17,6 +17,15 @@
 
   const activeAnchors = new Map();
 
+  function findAnchorForUrl(url) {
+    if (activeAnchors.has(url)) return activeAnchors.get(url);
+    try {
+      return document.querySelector(`a[href="${CSS.escape(url)}"]`);
+    } catch (e) {
+      return null;
+    }
+  }
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === "bypass_progress") {
       const { url, statusText } = msg;
@@ -26,10 +35,7 @@
         packBtn.innerHTML = statusText;
       }
 
-      let anchor = activeAnchors.get(url);
-      if (!anchor) {
-        try { anchor = document.querySelector(`a[href="${CSS.escape(url)}"]`); } catch (e) {}
-      }
+      const anchor = findAnchorForUrl(url);
       if (anchor && anchor.dataset.bypassing) {
         anchor.innerHTML = `<span style="opacity:0.9">${statusText}</span>`;
       }
