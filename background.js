@@ -4,7 +4,7 @@ const bypassCache = new Map();
 
 // Matching Patterns
 const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
-const INSTANT_DL_RE = /href=["'](https?:\/\/[^"'\s]*busycdn\.[a-z0-9.]+\/[^"'\s]+)['"]/i;
+const INSTANT_DL_RE = /href=["'](https?:\/\/[^"'\s]*(?:busycdn|foxcloud|fastcdn|workers\.dev|instant\.)[^"'\s]+)['"]/i;
 const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
 const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
 const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
@@ -40,6 +40,24 @@ async function fetchHTML(url) {
   return res.text();
 }
 
+async function extractDownloadFromGDFlixHTML(html, pageUrl) {
+  let instantMatch = html.match(INSTANT_DL_RE);
+  if (!instantMatch) {
+    const cloudMatch = html.match(/href=["']([^"']*\/(?:cloud)\/[^"'\s]+)["']/i);
+    if (cloudMatch) {
+      const cloudUrl = cloudMatch[1].startsWith("http") ? cloudMatch[1] : `${new URL(pageUrl).origin}${cloudMatch[1]}`;
+      const cloudHtml = await fetchHTML(cloudUrl);
+      instantMatch = cloudHtml.match(INSTANT_DL_RE) || cloudHtml.match(/href=["'](https?:\/\/[^"'\s]*\.workers\.dev\/[^"'\s]+)["']/i);
+    }
+  }
+  if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
+
+  const rawUrl = instantMatch[1].replace(/&amp;/g, "&");
+  const redirectRes = await fetchWithTimeout(rawUrl);
+  const parsedUrl = new URL(redirectRes.url);
+  return parsedUrl.searchParams.get("url") || redirectRes.url;
+}
+
 function isAllowedBypassUrl(url) {
   return RE_GYANIGURUS.test(url) || RE_KMHD.test(url) || RE_GDFLIX.test(url);
 }
@@ -70,12 +88,7 @@ async function resolveFullChain(url) {
         const touchData = await touchRes.json();
         if (touchData?.linkId) {
           const html2 = await fetchHTML(touchData.linkId);
-          const instantMatch = html2.match(INSTANT_DL_RE);
-          if (instantMatch) {
-            const redirectRes = await fetchWithTimeout(instantMatch[1]);
-            const parsedUrl = new URL(redirectRes.url);
-            finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
-          }
+          finalUrl = await extractDownloadFromGDFlixHTML(html2, touchData.linkId);
         }
       }
     } catch (e) {}
@@ -99,12 +112,7 @@ async function resolveFullChain(url) {
   } else if (RE_GDFLIX.test(url)) {
     // Direct GDFlix URL flow (e.g. gdflix.dev/file/...)
     const html = await fetchHTML(url);
-    const instantMatch = html.match(INSTANT_DL_RE);
-    if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
-
-    const redirectRes = await fetchWithTimeout(instantMatch[1]);
-    const parsedUrl = new URL(redirectRes.url);
-    finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
+    finalUrl = await extractDownloadFromGDFlixHTML(html, url);
   } else {
     // Gyanigurus flow (DesireMovies)
     const html1 = await fetchHTML(url);
@@ -126,12 +134,7 @@ async function resolveFullChain(url) {
     if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
 
     const html2 = await fetchHTML(match[1]);
-    const instantMatch = html2.match(INSTANT_DL_RE);
-    if (!instantMatch) throw new Error("Instant DL link not found on GDFlix page");
-
-    const redirectRes = await fetchWithTimeout(instantMatch[1]);
-    const parsedUrl = new URL(redirectRes.url);
-    finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
+    finalUrl = await extractDownloadFromGDFlixHTML(html2, match[1]);
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
