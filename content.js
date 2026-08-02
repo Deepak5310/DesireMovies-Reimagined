@@ -110,7 +110,7 @@
     const href = anchor.getAttribute("href");
     if (!href || anchor.dataset.bypassing) return;
 
-    if (!/^https?:\/\/[^/]*(gyanigurus|kmhd|moviesbaba|gdflix)/i.test(href)) return;
+    if (!/^https?:\/\/[^/]*(gyanigurus|kmhd|moviesbaba|gdflix|katdrama)/i.test(href)) return;
     if (/\/pack\//i.test(href)) return;
 
     e.preventDefault();

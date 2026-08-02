@@ -9,7 +9,7 @@ const RE_DIRECT_STREAM = /href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl
 
 const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
 const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
-const RE_KATMOVIEHD = /^https?:\/\/[^/]*katmoviehd/i;
+const RE_KATMOVIEHD = /^https?:\/\/[^/]*(katmoviehd|katdrama)/i;
 const RE_KMHD = /^https?:\/\/[^/]*kmhd/i;
 const RE_MOVIESBABA = /^https?:\/\/[^/]*moviesbaba/i;
 const RE_GDFLIX = /^https?:\/\/[^/]*(gdflix|gd\.kmhd)/i;
@@ -266,7 +266,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 const RE_TRAILING_DUP = /\s*\(\d+\)$/;
 const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
 const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
-const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd|kmhd|moviesbaba)[\w\-.]*\b|\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|x264|x265)\b/gi;
+const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd|katdrama|kmhd|moviesbaba)[\w\-.]*\b|[-\s]*\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|msubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|kor|x264|x265)\b/gi;
 const RE_SEASON = /\b(S\d{2})\b/gi;
 const RE_AUDIO_DOTS = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
 const RE_ALL_DOTS = /\./g;
