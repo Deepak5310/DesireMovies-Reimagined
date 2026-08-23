@@ -72,6 +72,33 @@ async function extractDownloadFromGDFlixHTML(html, pageUrl, onProgress) {
   return encodeURI(finalUrl);
 }
 
+// The Instant DL redirect often resolves to a source that streams but ignores
+// HTTP Range requests, which makes an HTML video element snap back on seek.
+// GDFlix's Cloud endpoint exposes the same file through a byte-range-capable
+// Worker URL, so prefer it only for online playback.
+async function extractSeekableStreamFromGDFlixHTML(html, pageUrl, onProgress) {
+  const cloudMatch = html.match(/href=["']([^"']*\/(?:cloud)\/\d+\/[a-zA-Z0-9_-]+)["']/i);
+  if (cloudMatch) {
+    onProgress?.("⏳ Preparing seekable stream…");
+    const cloudUrl = cloudMatch[1].startsWith("http") ? cloudMatch[1] : `${new URL(pageUrl).origin}${cloudMatch[1]}`;
+    const cloudRes = await fetchWithTimeout(cloudUrl);
+    // Some GDFlix Cloud pages return a useful worker link with a non-2xx
+    // status, so parse the response body instead of rejecting it first.
+    const cloudHtml = await cloudRes.text();
+    const streamMatch = findDirectStreamMatch(cloudHtml);
+    if (streamMatch) return encodeURI(streamMatch[1].replace(/&amp;/g, "&"));
+  }
+
+  onProgress?.("⏳ Seekable stream unavailable; using direct source…");
+  return extractDownloadFromGDFlixHTML(html, pageUrl, onProgress);
+}
+
+function extractGDFlixSource(html, pageUrl, onProgress, preferSeekableStream) {
+  return preferSeekableStream
+    ? extractSeekableStreamFromGDFlixHTML(html, pageUrl, onProgress)
+    : extractDownloadFromGDFlixHTML(html, pageUrl, onProgress);
+}
+
 function isAllowedBypassUrl(url) {
   return RE_GYANIGURUS.test(url) || RE_KMHD.test(url) || RE_GDFLIX.test(url);
 }
@@ -105,9 +132,9 @@ async function submitGyanigurusForm(url, html1) {
 }
 
 // Headless redirect chain resolver
-async function resolveFullChain(url, onProgress) {
+async function resolveFullChain(url, onProgress, { preferSeekableStream = false } = {}) {
   await ready;
-  if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
+  if (!preferSeekableStream && bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
 
   let finalUrl = "";
 
@@ -126,7 +153,7 @@ async function resolveFullChain(url, onProgress) {
         if (touchData?.linkId) {
           onProgress?.("⏳ Fetching GDFlix page…");
           const html2 = await fetchHTML(touchData.linkId);
-          finalUrl = await extractDownloadFromGDFlixHTML(html2, touchData.linkId, onProgress);
+          finalUrl = await extractGDFlixSource(html2, touchData.linkId, onProgress, preferSeekableStream);
         }
       }
     } catch (e) {}
@@ -153,7 +180,7 @@ async function resolveFullChain(url, onProgress) {
     // Direct GDFlix URL flow (e.g. gdflix.dev/file/...)
     onProgress?.("⏳ Connecting to GDFlix…");
     const html = await fetchHTML(url);
-    finalUrl = await extractDownloadFromGDFlixHTML(html, url, onProgress);
+    finalUrl = await extractGDFlixSource(html, url, onProgress, preferSeekableStream);
   } else {
     // Gyanigurus flow (DesireMovies)
     onProgress?.("⏳ Connecting to Gyanigurus…");
@@ -168,13 +195,15 @@ async function resolveFullChain(url, onProgress) {
 
     onProgress?.("⏳ Fetching GDFlix page…");
     const html2 = await fetchHTML(match[1]);
-    finalUrl = await extractDownloadFromGDFlixHTML(html2, match[1], onProgress);
+    finalUrl = await extractGDFlixSource(html2, match[1], onProgress, preferSeekableStream);
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
 
-  bypassCache.set(url, finalUrl);
-  persistState();
+  if (!preferSeekableStream) {
+    bypassCache.set(url, finalUrl);
+    persistState();
+  }
   return { success: true, downloadUrl: finalUrl };
 }
 
@@ -226,6 +255,29 @@ async function resolvePackChain(packUrl, providedFileUrls = [], onProgress) {
 }
 
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+  // Resolve a direct stream for the DesireMovies watch overlay without creating
+  // a download. Keeping this separate from full_bypass preserves download flow.
+  if (req.action === "resolve_stream") {
+    const url = req.payload?.url;
+    const tabId = sender?.tab?.id;
+    if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
+    if (!isAllowedBypassUrl(url)) { sendResponse({ success: false, error: "URL not in bypass allowlist" }); return false; }
+
+    const bypassKey = `stream:${url}`;
+    let promise = activeBypasses.get(bypassKey);
+    if (!promise) {
+      promise = ready.then(() => resolveFullChain(url, (msg) => sendProgress(tabId, url, msg), { preferSeekableStream: true }));
+      activeBypasses.set(bypassKey, promise);
+      promise.finally(() => activeBypasses.delete(bypassKey));
+    }
+    promise.then((result) => {
+      sendResponse({ success: true, streamUrl: result.downloadUrl });
+    }).catch((err) => {
+      sendProgress(tabId, url, `❌ ${err.message}`);
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
   if (req.action === "bypass_pack") {
     const url = req.payload?.url;
     const fileUrls = req.payload?.fileUrls;
