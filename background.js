@@ -93,12 +93,12 @@ const sendProgress = (tabId, url, status) => {
   if (tabId) chrome.tabs.sendMessage(tabId, { action: "bypass_progress", url, status }).catch(() => {});
 };
 
-// Stream Extraction
-const findDirectStream = (html) => extractMatch(html, PATTERNS.DIRECT_STREAM);
+// Download Extraction
+const findDirectLink = (html) => extractMatch(html, PATTERNS.DIRECT_STREAM);
 
 const extractGDFlixDownload = async (html, pageUrl, onProgress) => {
-  onProgress?.("⏳ Searching GDFlix stream…");
-  let match = findDirectStream(html);
+  onProgress?.("⏳ Locating GDFlix download link…");
+  let match = findDirectLink(html);
 
   if (!match || !/\.(?:mkv|mp4|avi|webm)|bytes=/i.test(match[1])) {
     onProgress?.("⏳ Checking Cloudflare Worker endpoint…");
@@ -106,33 +106,31 @@ const extractGDFlixDownload = async (html, pageUrl, onProgress) => {
     if (cloudMatch) {
       const cloudUrl = normalizeUrl(cloudMatch[1], pageUrl);
       const cloudHtml = await fetchHTML(cloudUrl);
-      const dlMatch = findDirectStream(cloudHtml);
+      const dlMatch = findDirectLink(cloudHtml);
       if (dlMatch) match = dlMatch;
     }
   }
 
-  if (!match) throw new Error("Direct video download link not found on GDFlix page");
+  if (!match) throw new Error("Direct download link not found on GDFlix page");
 
-  onProgress?.("⏳ Preparing direct stream URL…");
+  onProgress?.("⏳ Resolving final download URL…");
   const rawUrl = match[1].replace(/&amp;/g, "&");
   const redirectRes = await fetchWithTimeout(rawUrl);
   const finalUrl = new URL(redirectRes.url).searchParams.get("url") || redirectRes.url;
   return encodeURI(finalUrl);
 };
 
-const extractGDFlixSource = (html, pageUrl, onProgress) => extractGDFlixDownload(html, pageUrl, onProgress);
-
 // KMHD Chain Resolution
 const resolveKMHDGDFlix = async (origin, fileId, onProgress) => {
   try {
-    onProgress?.("⏳ Checking KMHD GDFlix response…");
+    onProgress?.("⏳ Contacting KMHD API (GDFlix)…");
     const res = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, { method: "POST" });
     if (res.ok) {
       const data = await res.json();
       if (data?.linkId) {
         onProgress?.("⏳ Fetching GDFlix page…");
         const html = await fetchHTML(data.linkId);
-        return extractGDFlixSource(html, data.linkId, onProgress);
+        return extractGDFlixDownload(html, data.linkId, onProgress);
       }
     }
   } catch (e) {}
@@ -147,7 +145,7 @@ const resolveKMHDHubDrive = async (origin, fileId, onProgress) => {
   const data = await res.json();
   if (!data?.linkId) throw new Error("Download link not found in KMHD API response");
 
-  onProgress?.("⏳ Fetching Sportverse direct link…");
+  onProgress?.("⏳ Fetching direct download link…");
   const hubUrl = data.linkId.replace(/hubcloud\.[a-z0-9.]+/i, "hubcloud.club");
   const hubHtml = await fetchHTML(hubUrl);
   const sportMatch = extractMatch(hubHtml, PATTERNS.SPORTVERSE);
@@ -158,7 +156,7 @@ const resolveKMHDHubDrive = async (origin, fileId, onProgress) => {
     if (dlMatch) return dlMatch[1];
   }
 
-  throw new Error("Could not resolve HubDrive stream");
+  throw new Error("Could not resolve HubDrive download");
 };
 
 // Gyanigurus Form Submission
@@ -197,22 +195,18 @@ const resolveFullChain = async (url, onProgress) => {
     finalUrl = await resolveKMHDGDFlix(origin, fileId, onProgress) || await resolveKMHDHubDrive(origin, fileId, onProgress);
   } else if (DOMAINS.GDFLIX.re.test(url)) {
     onProgress?.("⏳ Connecting to GDFlix…");
-    const html = await fetchHTML(url);
-    finalUrl = await extractGDFlixSource(html, url, onProgress);
+    finalUrl = await extractGDFlixDownload(await fetchHTML(url), url, onProgress);
   } else {
     onProgress?.("⏳ Connecting to Gyanigurus…");
     const html = await fetchHTML(url);
     let match = extractMatch(html, PATTERNS.GDFLIX_HREF);
     if (!match) {
       onProgress?.("⏳ Submitting Gyanigurus form…");
-      const htmlPost = await submitGyanigurusForm(url, html);
-      match = extractMatch(htmlPost, PATTERNS.GDFLIX_HREF);
+      match = extractMatch(await submitGyanigurusForm(url, html), PATTERNS.GDFLIX_HREF);
     }
     if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
-
     onProgress?.("⏳ Fetching GDFlix page…");
-    const html2 = await fetchHTML(match[1]);
-    finalUrl = await extractGDFlixSource(html2, match[1], onProgress);
+    finalUrl = await extractGDFlixDownload(await fetchHTML(match[1]), match[1], onProgress);
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
@@ -257,7 +251,7 @@ const resolvePackChain = async (packUrl, providedFileUrls = [], onProgress) => {
   let startedCount = 0;
   const total = fileUrls.length;
   for (let i = 0; i < total; i++) {
-    onProgress?.(`⏳ Episode ${i + 1}/${total}: Resolving stream…`);
+    onProgress?.(`⏳ Episode ${i + 1}/${total}: Fetching download…`);
     try {
       const result = await resolveFullChain(fileUrls[i]);
       if (result?.downloadUrl) {
