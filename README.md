@@ -31,7 +31,6 @@ If the headless chain fails (e.g., a Cloudflare challenge or a major page struct
 ## Features
 
 - **Zero-tab download**: Entire chain resolved headlessly — download starts directly via `chrome.downloads`.
-- **Online Watch (DesireMovies)**: Adds a Watch Online button beside supported resolution links and plays the resolved stream in an in-page player.
 - **Lightning Fast**: Three sequential fetches take ~2-3s total compared to opening/closing multiple tabs.
 - **Smart Filename Cleaning**: Strips site branding, preserves important quality/codec tags (like 1080p, WEB-DL, HEVC), and standardizes episode formats on every download.
 - **Bypass Cache**: Caches resolved download URLs per session so clicking the same link twice instantly downloads the file.
@@ -59,7 +58,6 @@ git clone https://github.com/Deepak5310/DesireMovies-Reimagined.git
 No configuration required. Once loaded:
 
 - **DesireMovies** — Click any download link. You'll see "⏳ Bypassing…" then "✅ Download started". No tabs open.
-- **Online Watch** — On DesireMovies posts, use the `▶ Watch Online` button beside a supported resolution link. The player supports fullscreen, Up/Down volume, Left/Right 10-second seeking, and mouse-wheel volume control.
 - **Downloads** — All filenames are automatically cleaned.
 
 ### Filename Examples

@@ -3,236 +3,196 @@
 const activeBypasses = new Map();
 const bypassCache = new Map();
 
-// Domain Configuration
-const DOMAINS = {
-  GYANIGURUS: { re: /^https?:\/\/[^/]*gyanigurus/i, name: "gyanigurus" },
-  DESIREMOVIES: { re: /^https?:\/\/[^/]*desiremovies/i, name: "desiremovies" },
-  KATMOVIEHD: { re: /^https?:\/\/[^/]*(katmoviehd|katdrama)/i, name: "katmoviehd" },
-  KMHD: { re: /^https?:\/\/[^/]*kmhd/i, name: "kmhd" },
-  MOVIESBABA: { re: /^https?:\/\/[^/]*moviesbaba/i, name: "moviesbaba" },
-  GDFLIX: { re: /^https?:\/\/[^/]*(gdflix|gd\.kmhd)/i, name: "gdflix" }
-};
+// Domain & Link Match Patterns
+const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
+const RE_DIRECT_STREAM = /href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i;
 
-const PATTERNS = {
-  GDFLIX_HREF: /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i,
-  DIRECT_STREAM: /href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers|cloudflarestorage)[^"']+)["']/i,
-  CLOUD_LINK: /href=["']([^"']*\/(?:cloud)\/\d+\/[a-zA-Z0-9_-]+)["']/i,
-  SPORTVERSE: /href=["'](https?:\/\/[^"'\s]*sportverse\.[^"'\s]+)["']/i,
-  FILE_LINK: /href=["']([^"']*\/(?:file)\/[a-zA-Z0-9_-]+)["']/gi,
-  FILE_ID: /\/file\/([a-zA-Z0-9_-]+)/,
-  PACK_ID: /\/pack\/([a-zA-Z0-9_-]+)/,
-  HIDDEN_INPUT: /<input[^>]+type=["']?hidden["']?[^>]*>/gi,
-  INPUT_NAME: /name=["']([^"']+)["']/i,
-  INPUT_VALUE: /value=["']([^"']*)["']/i
-};
+const RE_GYANIGURUS = /^https?:\/\/[^/]*gyanigurus/i;
+const RE_DESIREMOVIES = /^https?:\/\/[^/]*desiremovies/i;
+const RE_KATMOVIEHD = /^https?:\/\/[^/]*(katmoviehd|katdrama)/i;
+const RE_KMHD = /^https?:\/\/[^/]*kmhd/i;
+const RE_MOVIESBABA = /^https?:\/\/[^/]*moviesbaba/i;
+const RE_GDFLIX = /^https?:\/\/[^/]*(gdflix|gd\.kmhd)/i;
 
-const FILENAME_PATTERNS = {
-  TRAILING_DUP: /\s*\(\d+\)$/,
-  BRACKETS: /[\[\]\(\)\{\}]/g,
-  EP_PREFIX: /^EP((\.\d+)+)\./i,
-  BRANDING: /[-\s]*\b(desiremovies|katmoviehd|katdrama|kmhd|moviesbaba)[\w\-.]*\b|[-\s]*\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|msubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|kor|x264|x265)\b/gi,
-  SEASON: /\b(S\d{2})\b/gi,
-  AUDIO_DOTS: /(5\.1|2\.0|7\.1|8\.1|2\.1)/g,
-  ALL_DOTS: /\./g,
-  DOT_PLACEHOLDER: /_DOT_/g,
-  NON_ALNUM: /[^a-zA-Z0-9\-.]/g,
-  MULTI_SPACE: /\s+/g,
-  TRAILING_PUNCT: /[-.]+$/
-};
-
-const WORD_MAP = {
-  "4k": "4K",
-  "web-dl": "WEB-DL",
-  "webdl": "WEB-DL",
-  "web-hdrip": "WEB-HDRip",
-  "webhdrip": "WEB-HDRip",
-  "bluray": "BluRay",
-  "webrip": "WEB-Rip"
-};
-
-// State Persistence
+// Cache Persistence
 const ready = (async () => {
   try {
-    const { bypassCache: cached } = await chrome.storage.session.get("bypassCache");
-    if (cached) Object.entries(cached).forEach(([k, v]) => bypassCache.set(k, v));
+    const sessionData = await chrome.storage.session.get(["bypassCache"]);
+    if (sessionData.bypassCache) {
+      for (const [k, v] of Object.entries(sessionData.bypassCache)) bypassCache.set(k, v);
+    }
   } catch (e) {}
 })();
 
-const persistState = () => {
+function persistState() {
   chrome.storage.session.set({ bypassCache: Object.fromEntries(bypassCache) }).catch(() => {});
-};
+}
 
-// Utilities
-const fetchWithTimeout = async (url, options = {}, ms = 8000) => {
+async function fetchWithTimeout(url, options = {}, ms = 8000) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
   try {
     return await fetch(url, { ...options, signal: ctrl.signal });
-  } finally {
-    clearTimeout(id);
-  }
-};
+  } finally { clearTimeout(id); }
+}
 
-const fetchHTML = async (url) => {
+async function fetchHTML(url) {
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${new URL(url).hostname}`);
   return res.text();
-};
+}
 
-const normalizeUrl = (url, baseUrl) => {
-  if (url.startsWith("http")) return url;
-  const base = new URL(baseUrl);
-  return url.startsWith("/") ? `${base.origin}${url}` : `${base.origin}/${url}`;
-};
+function findDirectStreamMatch(html) {
+  return html.match(RE_DIRECT_STREAM);
+}
 
-const extractMatch = (html, pattern) => html.match(pattern);
+async function extractDownloadFromGDFlixHTML(html, pageUrl, onProgress) {
+  onProgress?.("⏳ Searching GDFlix stream…");
+  let match = findDirectStreamMatch(html);
 
-const isAllowedBypassUrl = (url) => Object.values(DOMAINS).some(({ re }) => re.test(url));
-
-const sendProgress = (tabId, url, status) => {
-  if (tabId) chrome.tabs.sendMessage(tabId, { action: "bypass_progress", url, status }).catch(() => {});
-};
-
-// Download Extraction
-const findDirectLink = (html) => extractMatch(html, PATTERNS.DIRECT_STREAM);
-
-const extractGDFlixDownload = async (html, pageUrl, onProgress) => {
-  onProgress?.("⏳ Locating GDFlix download link…");
-  let match = findDirectLink(html);
-
+  // If missing or matched an ad button, query GDFlix /cloud/ endpoint
   if (!match || !/\.(?:mkv|mp4|avi|webm)|bytes=/i.test(match[1])) {
     onProgress?.("⏳ Checking Cloudflare Worker endpoint…");
-    const cloudMatch = extractMatch(html, PATTERNS.CLOUD_LINK);
+    const cloudMatch = html.match(/href=["']([^"']*\/(?:cloud)\/\d+\/[a-zA-Z0-9_-]+)["']/i);
     if (cloudMatch) {
-      const cloudUrl = normalizeUrl(cloudMatch[1], pageUrl);
+      const cloudUrl = cloudMatch[1].startsWith("http") ? cloudMatch[1] : `${new URL(pageUrl).origin}${cloudMatch[1]}`;
       const cloudHtml = await fetchHTML(cloudUrl);
-      const dlMatch = findDirectLink(cloudHtml);
+      const dlMatch = findDirectStreamMatch(cloudHtml);
       if (dlMatch) match = dlMatch;
     }
   }
 
-  if (!match) throw new Error("Direct download link not found on GDFlix page");
+  if (!match) throw new Error("Direct video download link not found on GDFlix page");
 
-  onProgress?.("⏳ Resolving final download URL…");
+  onProgress?.("⏳ Preparing direct stream URL…");
   const rawUrl = match[1].replace(/&amp;/g, "&");
   const redirectRes = await fetchWithTimeout(rawUrl);
-  const finalUrl = new URL(redirectRes.url).searchParams.get("url") || redirectRes.url;
+  const parsedUrl = new URL(redirectRes.url);
+  const finalUrl = parsedUrl.searchParams.get("url") || redirectRes.url;
   return encodeURI(finalUrl);
-};
+}
 
-// KMHD Chain Resolution
-const resolveKMHDGDFlix = async (origin, fileId, onProgress) => {
-  try {
-    onProgress?.("⏳ Contacting KMHD API (GDFlix)…");
-    const res = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, { method: "POST" });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.linkId) {
-        onProgress?.("⏳ Fetching GDFlix page…");
-        const html = await fetchHTML(data.linkId);
-        return extractGDFlixDownload(html, data.linkId, onProgress);
-      }
-    }
-  } catch (e) {}
-  return null;
-};
+function isAllowedBypassUrl(url) {
+  return RE_GYANIGURUS.test(url) || RE_KMHD.test(url) || RE_GDFLIX.test(url);
+}
 
-const resolveKMHDHubDrive = async (origin, fileId, onProgress) => {
-  onProgress?.("⏳ Trying HubDrive fallback…");
-  const res = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=hubdrive_res`, { method: "POST" });
-  if (!res.ok) throw new Error(`HTTP ${res.status} on KMHD HubDrive API`);
-
-  const data = await res.json();
-  if (!data?.linkId) throw new Error("Download link not found in KMHD API response");
-
-  onProgress?.("⏳ Fetching direct download link…");
-  const hubUrl = data.linkId.replace(/hubcloud\.[a-z0-9.]+/i, "hubcloud.club");
-  const hubHtml = await fetchHTML(hubUrl);
-  const sportMatch = extractMatch(hubHtml, PATTERNS.SPORTVERSE);
-
-  if (sportMatch) {
-    const sportHtml = await fetchHTML(sportMatch[1]);
-    const dlMatch = sportHtml.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|busycdn|fastcdn|pixeldrain)[^"'\s]+)["']/i);
-    if (dlMatch) return dlMatch[1];
+function sendProgress(tabId, targetUrl, statusText) {
+  if (tabId) {
+    chrome.tabs.sendMessage(tabId, { action: "bypass_progress", url: targetUrl, statusText }).catch(() => {});
   }
+}
 
-  throw new Error("Could not resolve HubDrive download");
-};
+// Inject content script on target site loads
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading" && tab.url && (RE_DESIREMOVIES.test(tab.url) || RE_KATMOVIEHD.test(tab.url) || RE_MOVIESBABA.test(tab.url) || RE_KMHD.test(tab.url) || RE_GDFLIX.test(tab.url))) {
+    chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
+  }
+});
 
-// Gyanigurus Form Submission
-const submitGyanigurusForm = async (url, html) => {
+async function submitGyanigurusForm(url, html1) {
   const body = new URLSearchParams();
-  for (const m of html.matchAll(PATTERNS.HIDDEN_INPUT)) {
+  for (const m of html1.matchAll(/<input[^>]+>/gi)) {
     const tag = m[0];
-    const name = tag.match(PATTERNS.INPUT_NAME)?.[1];
-    const value = tag.match(PATTERNS.INPUT_VALUE)?.[1] ?? "";
-    if (name) body.append(name, value);
+    if (/type=["']?hidden["']?/i.test(tag)) {
+      const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
+      const value = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
+      if (name) body.append(name, value);
+    }
   }
-  const res = await fetchWithTimeout(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString()
-  });
+  const res = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
   if (!res.ok) throw new Error(`HTTP ${res.status} on Gyanigurus POST`);
   return res.text();
-};
+}
 
-// Main Chain Resolution
-const resolveFullChain = async (url, onProgress) => {
+// Headless redirect chain resolver
+async function resolveFullChain(url, onProgress) {
   await ready;
-  if (bypassCache.has(url)) {
-    return { success: true, downloadUrl: bypassCache.get(url) };
-  }
+  if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
 
   let finalUrl = "";
 
-  if (DOMAINS.KMHD.re.test(url)) {
+  if (RE_KMHD.test(url)) {
     onProgress?.("⏳ Requesting KMHD API…");
-    const fileId = url.match(PATTERNS.FILE_ID)?.[1];
+    const fileId = url.match(/\/file\/([a-zA-Z0-9_-]+)/)?.[1];
     if (!fileId) throw new Error("Not a single file download link");
     const origin = new URL(url).origin;
 
-    finalUrl = await resolveKMHDGDFlix(origin, fileId, onProgress) || await resolveKMHDHubDrive(origin, fileId, onProgress);
-  } else if (DOMAINS.GDFLIX.re.test(url)) {
+    // Try GDFlix first
+    try {
+      onProgress?.("⏳ Checking KMHD GDFlix response…");
+      const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=gdflix_res`, { method: "POST" });
+      if (touchRes.ok) {
+        const touchData = await touchRes.json();
+        if (touchData?.linkId) {
+          onProgress?.("⏳ Fetching GDFlix page…");
+          const html2 = await fetchHTML(touchData.linkId);
+          finalUrl = await extractDownloadFromGDFlixHTML(html2, touchData.linkId, onProgress);
+        }
+      }
+    } catch (e) {}
+
+    // Fallback to HubDrive if GDFlix was blocked by Cloudflare or failed
+    if (!finalUrl) {
+      onProgress?.("⏳ Trying HubDrive fallback…");
+      const touchRes = await fetchWithTimeout(`${origin}/api/touchme/${fileId}?c=hubdrive_res`, { method: "POST" });
+      if (!touchRes.ok) throw new Error(`HTTP ${touchRes.status} on KMHD HubDrive API`);
+      const touchData = await touchRes.json();
+      if (!touchData?.linkId) throw new Error("Download link not found in KMHD API response");
+
+      onProgress?.("⏳ Fetching Sportverse direct link…");
+      const hubUrl = touchData.linkId.replace(/hubcloud\.[a-z0-9.]+/i, "hubcloud.club");
+      const hubHtml = await fetchHTML(hubUrl);
+      const sportMatch = hubHtml.match(/href=["'](https?:\/\/[^"'\s]*sportverse\.[^"'\s]+)["']/i);
+      if (sportMatch) {
+        const sportHtml = await fetchHTML(sportMatch[1]);
+        const dlMatch = sportHtml.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|busycdn|fastcdn|pixeldrain)[^"'\s]+)["']/i);
+        if (dlMatch) finalUrl = dlMatch[1];
+      }
+    }
+  } else if (RE_GDFLIX.test(url)) {
+    // Direct GDFlix URL flow (e.g. gdflix.dev/file/...)
     onProgress?.("⏳ Connecting to GDFlix…");
-    finalUrl = await extractGDFlixDownload(await fetchHTML(url), url, onProgress);
-  } else {
-    onProgress?.("⏳ Connecting to Gyanigurus…");
     const html = await fetchHTML(url);
-    let match = extractMatch(html, PATTERNS.GDFLIX_HREF);
+    finalUrl = await extractDownloadFromGDFlixHTML(html, url, onProgress);
+  } else {
+    // Gyanigurus flow (DesireMovies)
+    onProgress?.("⏳ Connecting to Gyanigurus…");
+    const html1 = await fetchHTML(url);
+    let match = html1.match(GDFLIX_HREF_RE);
     if (!match) {
       onProgress?.("⏳ Submitting Gyanigurus form…");
-      match = extractMatch(await submitGyanigurusForm(url, html), PATTERNS.GDFLIX_HREF);
+      const htmlPost = await submitGyanigurusForm(url, html1);
+      match = htmlPost.match(GDFLIX_HREF_RE);
     }
     if (!match) throw new Error("GDFlix link not found on Gyanigurus page");
+
     onProgress?.("⏳ Fetching GDFlix page…");
-    finalUrl = await extractGDFlixDownload(await fetchHTML(match[1]), match[1], onProgress);
+    const html2 = await fetchHTML(match[1]);
+    finalUrl = await extractDownloadFromGDFlixHTML(html2, match[1], onProgress);
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
 
   bypassCache.set(url, finalUrl);
   persistState();
-
   return { success: true, downloadUrl: finalUrl };
-};
+}
 
-// Pack Resolution
-const resolvePackChain = async (packUrl, providedFileUrls = [], onProgress) => {
+async function resolvePackChain(packUrl, providedFileUrls = [], onProgress) {
   await ready;
   onProgress?.("⏳ Scanning episode links…");
   const origin = new URL(packUrl).origin;
   let fileUrls = Array.isArray(providedFileUrls) && providedFileUrls.length ? providedFileUrls : [];
 
   if (!fileUrls.length) {
-    const packId = packUrl.match(PATTERNS.PACK_ID)?.[1];
+    const packId = packUrl.match(/\/pack\/([a-zA-Z0-9_-]+)/)?.[1];
     if (packId) {
       try {
         const res = await fetchWithTimeout(`https://api.dandndn.one/api/v1/pack/${packId}`);
         if (res.ok) {
-          const data = await res.json();
-          const ids = Object.keys(data?.info || {});
-          if (ids.length) fileUrls = ids.map(id => `${origin}/file/${id}`);
+          const packData = await res.json();
+          const fileIds = Object.keys(packData?.info || {});
+          if (fileIds.length) fileUrls = fileIds.map(id => `${origin}/file/${id}`);
         }
       } catch (e) {}
     }
@@ -241,8 +201,8 @@ const resolvePackChain = async (packUrl, providedFileUrls = [], onProgress) => {
   if (!fileUrls.length) {
     try {
       const html = await fetchHTML(packUrl);
-      const matches = [...html.matchAll(PATTERNS.FILE_LINK)];
-      fileUrls = [...new Set(matches.map(m => normalizeUrl(m[1], packUrl)))];
+      const matches = [...html.matchAll(/href=["']([^"']*\/(?:file)\/[a-zA-Z0-9_-]+)["']/gi)];
+      fileUrls = [...new Set(matches.map(m => m[1].startsWith("http") ? m[1] : `${origin}${m[1]}`))];
     } catch (e) {}
   }
 
@@ -251,9 +211,10 @@ const resolvePackChain = async (packUrl, providedFileUrls = [], onProgress) => {
   let startedCount = 0;
   const total = fileUrls.length;
   for (let i = 0; i < total; i++) {
-    onProgress?.(`⏳ Episode ${i + 1}/${total}: Fetching download…`);
+    const fileUrl = fileUrls[i];
+    onProgress?.(`⏳ Episode ${i + 1}/${total}: Resolving stream…`);
     try {
-      const result = await resolveFullChain(fileUrls[i]);
+      const result = await resolveFullChain(fileUrl);
       if (result?.downloadUrl) {
         chrome.downloads.download({ url: result.downloadUrl });
         startedCount++;
@@ -262,107 +223,103 @@ const resolvePackChain = async (packUrl, providedFileUrls = [], onProgress) => {
   }
 
   return { success: startedCount > 0, count: startedCount, total };
-};
+}
 
-// Content Script Injection
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && tab.url && Object.values(DOMAINS).some(({ re }) => re.test(tab.url))) {
-    chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
-  }
-});
-
-// Message Handler
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
-  const { action, payload } = req;
-  const { tab } = sender;
-  const url = payload?.url;
-  const tabId = tab?.id;
-
-  if (!url) {
-    sendResponse({ success: false, error: "Missing URL" });
-    return false;
+  if (req.action === "bypass_pack") {
+    const url = req.payload?.url;
+    const fileUrls = req.payload?.fileUrls;
+    const tabId = sender?.tab?.id;
+    if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
+    resolvePackChain(url, fileUrls, (msg) => sendProgress(tabId, url, msg))
+      .then((res) => sendResponse(res))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
   }
+  if (req.action === "full_bypass") {
+    const url = req.payload?.url;
+    const tabId = sender?.tab?.id;
+    if (!url) { sendResponse({ success: false, error: "Missing URL" }); return false; }
+    if (!isAllowedBypassUrl(url)) { sendResponse({ success: false, error: "URL not in bypass allowlist" }); return false; }
 
-  if (!isAllowedBypassUrl(url)) {
-    sendResponse({ success: false, error: "URL not in bypass allowlist" });
-    return false;
-  }
-
-  const getOrCreatePromise = (key, executor) => {
-    let promise = activeBypasses.get(key);
+    let promise = activeBypasses.get(url);
     if (!promise) {
-      promise = Promise.resolve().then(executor);
-      activeBypasses.set(key, promise);
-      promise.finally(() => activeBypasses.delete(key));
+      promise = ready.then(() => resolveFullChain(url, (msg) => sendProgress(tabId, url, msg)));
+      activeBypasses.set(url, promise);
+      promise.finally(() => activeBypasses.delete(url));
     }
-    return promise;
-  };
-
-  if (action === "bypass_pack") {
-    resolvePackChain(url, payload?.fileUrls, msg => sendProgress(tabId, url, msg))
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+    promise.then((result) => {
+      sendProgress(tabId, url, "✅ Download started");
+      chrome.downloads.download({ url: result.downloadUrl });
+      sendResponse({ success: true });
+    }).catch((err) => {
+      sendProgress(tabId, url, `❌ ${err.message}`);
+      sendResponse({ success: false, error: err.message });
+    });
     return true;
   }
-
-  if (action === "full_bypass") {
-    getOrCreatePromise(url, () => resolveFullChain(url, msg => sendProgress(tabId, url, msg)))
-      .then(result => {
-        sendProgress(tabId, url, "✅ Download started");
-        chrome.downloads.download({ url: result.downloadUrl });
-        sendResponse({ success: true });
-      })
-      .catch(err => {
-        sendProgress(tabId, url, `❌ ${err.message}`);
-        sendResponse({ success: false, error: err.message });
-      });
-    return true;
-  }
-
-  sendResponse({ success: false, error: `Unknown action: ${action}` });
+  sendResponse({ success: false, error: `Unknown action: ${req.action}` });
   return false;
 });
 
-// Filename Cleaning
-const cleanFilename = (filename) => {
+// Filename Cleaning Logic
+const RE_TRAILING_DUP = /\s*\(\d+\)$/;
+const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
+const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
+const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd|katdrama|kmhd|moviesbaba)[\w\-.]*\b|[-\s]*\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|msubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|kor|x264|x265)\b/gi;
+const RE_SEASON = /\b(S\d{2})\b/gi;
+const RE_AUDIO_DOTS = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
+const RE_ALL_DOTS = /\./g;
+const RE_DOT_PLACEHOLDER = /_DOT_/g;
+const RE_NON_ALNUM = /[^a-zA-Z0-9\-.]/g;
+const RE_MULTI_SPACE = /\s+/g;
+const RE_TRAILING_PUNCT = /[-.]+$/;
+
+const WORD_MAP = new Map([
+  ["4k", "4K"],
+  ["web-dl", "WEB-DL"],
+  ["webdl", "WEB-DL"],
+  ["web-hdrip", "WEB-HDRip"],
+  ["webhdrip", "WEB-HDRip"],
+  ["bluray", "BluRay"],
+  ["webrip", "WEB-Rip"]
+]);
+
+function cleanFilename(filename) {
   const dotIdx = filename.lastIndexOf(".");
   if (dotIdx === -1) return filename;
-
   const ext = filename.slice(dotIdx);
   let base = filename.slice(0, dotIdx);
   let epTag = "";
 
-  base = base.replace(FILENAME_PATTERNS.TRAILING_DUP, "").replace(FILENAME_PATTERNS.BRACKETS, " ");
-  base = base.replace(FILENAME_PATTERNS.EP_PREFIX, (_, group) => {
+  base = base.replace(RE_TRAILING_DUP, "").replace(RE_BRACKETS, " ");
+  base = base.replace(RE_EP_PREFIX, (_, group) => {
     const nums = group.split(".").filter(Boolean).map(Number);
-    const pad = n => String(n).padStart(2, "0");
+    const pad = (n) => String(n).padStart(2, "0");
     epTag = nums[0] === nums.at(-1) ? `EP${pad(nums[0])}` : `EP${pad(nums[0])}-${pad(nums.at(-1))}`;
     return "";
   });
 
   const clean = base
-    .replace(FILENAME_PATTERNS.BRANDING, "")
-    .replace(FILENAME_PATTERNS.SEASON, epTag ? `$1 ${epTag}` : "$1")
-    .replace(FILENAME_PATTERNS.AUDIO_DOTS, m => m.replace(".", "_DOT_"))
-    .replace(FILENAME_PATTERNS.ALL_DOTS, " ")
-    .replace(FILENAME_PATTERNS.DOT_PLACEHOLDER, ".")
-    .replace(FILENAME_PATTERNS.NON_ALNUM, " ")
-    .replace(FILENAME_PATTERNS.MULTI_SPACE, " ")
+    .replace(RE_BRANDING, "")
+    .replace(RE_SEASON, epTag ? `$1 ${epTag}` : "$1")
+    .replace(RE_AUDIO_DOTS, (m) => m.replace(".", "_DOT_"))
+    .replace(RE_ALL_DOTS, " ")
+    .replace(RE_DOT_PLACEHOLDER, ".")
+    .replace(RE_NON_ALNUM, " ")
+    .replace(RE_MULTI_SPACE, " ")
     .trim()
-    .replace(FILENAME_PATTERNS.TRAILING_PUNCT, "")
+    .replace(RE_TRAILING_PUNCT, "")
     .split(" ")
     .filter(Boolean)
-    .map(w => WORD_MAP[w.toLowerCase()] || (w.charAt(0).toUpperCase() + w.slice(1)))
+    .map((w) => WORD_MAP.get(w.toLowerCase()) || (w.charAt(0).toUpperCase() + w.slice(1)))
     .join(" ");
 
   return clean + ext;
-};
+}
 
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-  if (item.byExtensionId !== chrome.runtime.id) {
-    suggest();
-    return;
-  }
+  if (item.byExtensionId !== chrome.runtime.id) { suggest(); return; }
   try {
     suggest({ filename: cleanFilename(item.filename) });
   } catch (e) {
