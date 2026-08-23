@@ -120,23 +120,7 @@ const extractGDFlixDownload = async (html, pageUrl, onProgress) => {
   return encodeURI(finalUrl);
 };
 
-const extractGDFlixSeekable = async (html, pageUrl, onProgress) => {
-  const cloudMatch = extractMatch(html, PATTERNS.CLOUD_LINK);
-  if (cloudMatch) {
-    onProgress?.("⏳ Preparing seekable stream…");
-    const cloudUrl = normalizeUrl(cloudMatch[1], pageUrl);
-    const cloudRes = await fetchWithTimeout(cloudUrl);
-    const cloudHtml = await cloudRes.text();
-    const streamMatch = findDirectStream(cloudHtml);
-    if (streamMatch) return encodeURI(streamMatch[1].replace(/&amp;/g, "&"));
-  }
-
-  onProgress?.("⏳ Seekable stream unavailable; using direct source…");
-  return extractGDFlixDownload(html, pageUrl, onProgress);
-};
-
-const extractGDFlixSource = (html, pageUrl, onProgress, preferSeekable) =>
-  preferSeekable ? extractGDFlixSeekable(html, pageUrl, onProgress) : extractGDFlixDownload(html, pageUrl, onProgress);
+const extractGDFlixSource = (html, pageUrl, onProgress) => extractGDFlixDownload(html, pageUrl, onProgress);
 
 // KMHD Chain Resolution
 const resolveKMHDGDFlix = async (origin, fileId, onProgress) => {
@@ -148,7 +132,7 @@ const resolveKMHDGDFlix = async (origin, fileId, onProgress) => {
       if (data?.linkId) {
         onProgress?.("⏳ Fetching GDFlix page…");
         const html = await fetchHTML(data.linkId);
-        return extractGDFlixSource(html, data.linkId, onProgress, true);
+        return extractGDFlixSource(html, data.linkId, onProgress);
       }
     }
   } catch (e) {}
@@ -196,9 +180,9 @@ const submitGyanigurusForm = async (url, html) => {
 };
 
 // Main Chain Resolution
-const resolveFullChain = async (url, onProgress, { preferSeekableStream = false } = {}) => {
+const resolveFullChain = async (url, onProgress) => {
   await ready;
-  if (!preferSeekableStream && bypassCache.has(url)) {
+  if (bypassCache.has(url)) {
     return { success: true, downloadUrl: bypassCache.get(url) };
   }
 
@@ -214,7 +198,7 @@ const resolveFullChain = async (url, onProgress, { preferSeekableStream = false 
   } else if (DOMAINS.GDFLIX.re.test(url)) {
     onProgress?.("⏳ Connecting to GDFlix…");
     const html = await fetchHTML(url);
-    finalUrl = await extractGDFlixSource(html, url, onProgress, preferSeekableStream);
+    finalUrl = await extractGDFlixSource(html, url, onProgress);
   } else {
     onProgress?.("⏳ Connecting to Gyanigurus…");
     const html = await fetchHTML(url);
@@ -228,15 +212,13 @@ const resolveFullChain = async (url, onProgress, { preferSeekableStream = false 
 
     onProgress?.("⏳ Fetching GDFlix page…");
     const html2 = await fetchHTML(match[1]);
-    finalUrl = await extractGDFlixSource(html2, match[1], onProgress, preferSeekableStream);
+    finalUrl = await extractGDFlixSource(html2, match[1], onProgress);
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
 
-  if (!preferSeekableStream) {
-    bypassCache.set(url, finalUrl);
-    persistState();
-  }
+  bypassCache.set(url, finalUrl);
+  persistState();
 
   return { success: true, downloadUrl: finalUrl };
 };
@@ -302,12 +284,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   const url = payload?.url;
   const tabId = tab?.id;
 
-  if (!url && action !== "full_bypass" && action !== "resolve_stream" && action !== "bypass_pack") {
+  if (!url) {
     sendResponse({ success: false, error: "Missing URL" });
     return false;
   }
 
-  if ((action === "resolve_stream" || action === "full_bypass") && !isAllowedBypassUrl(url)) {
+  if (!isAllowedBypassUrl(url)) {
     sendResponse({ success: false, error: "URL not in bypass allowlist" });
     return false;
   }
@@ -321,17 +303,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     }
     return promise;
   };
-
-  if (action === "resolve_stream") {
-    const bypassKey = `stream:${url}`;
-    getOrCreatePromise(bypassKey, () => resolveFullChain(url, msg => sendProgress(tabId, url, msg), { preferSeekableStream: true }))
-      .then(result => sendResponse({ success: true, streamUrl: result.downloadUrl }))
-      .catch(err => {
-        sendProgress(tabId, url, `❌ ${err.message}`);
-        sendResponse({ success: false, error: err.message });
-      });
-    return true;
-  }
 
   if (action === "bypass_pack") {
     resolvePackChain(url, payload?.fileUrls, msg => sendProgress(tabId, url, msg))
