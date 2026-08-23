@@ -93,6 +93,7 @@
       0,
       Math.min(1, Math.round((video.volume + amount) * 100) / 100),
     );
+    return Math.round(video.volume * 100);
   }
 
   function openPlayer(streamUrl, opener) {
@@ -136,20 +137,26 @@
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;flex:0 0 auto;gap:8px;";
 
-    const fullscreen = document.createElement("button");
-    fullscreen.type = "button";
-    fullscreen.textContent = "⛶ Fullscreen";
-    fullscreen.title = "Enter fullscreen";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.textContent = "↶ 10s";
+    back.title = "Back 10 seconds";
+    const forward = document.createElement("button");
+    forward.type = "button";
+    forward.textContent = "10s ↷";
+    forward.title = "Forward 10 seconds";
     const close = document.createElement("button");
     close.type = "button";
     close.textContent = "Close ×";
     close.title = "Close player";
-    fullscreen.style.cssText =
+    const seekButtonStyle =
       "border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:8px 11px;background:rgba(255,255,255,.07);color:#f8fafc;font:700 13px system-ui,sans-serif;cursor:pointer;";
+    back.style.cssText = seekButtonStyle;
+    forward.style.cssText = seekButtonStyle;
     close.style.cssText =
       "border:1px solid rgba(255,112,112,.35);border-radius:8px;padding:8px 11px;background:rgba(229,9,20,.12);color:#ffb4b8;font:700 13px system-ui,sans-serif;cursor:pointer;";
     heading.append(eyebrow, title);
-    actions.append(fullscreen, close);
+    actions.append(back, forward, close);
     toolbar.append(heading, actions);
 
     const stage = document.createElement("div");
@@ -164,10 +171,18 @@
     video.setAttribute("aria-label", "Online video player");
     video.style.cssText =
       "display:block;width:100%;height:100%;background:#000;object-fit:contain;outline:none;";
-    stage.appendChild(video);
+    const hud = document.createElement("div");
+    hud.style.cssText =
+      "position:absolute;top:50%;left:50%;display:flex;min-width:112px;transform:translate(-50%,-42%) scale(.94);flex-direction:column;align-items:center;gap:7px;padding:16px 20px;border:1px solid rgba(255,255,255,.2);border-radius:14px;background:rgba(8,12,19,.82);box-shadow:0 12px 35px rgba(0,0,0,.42);color:#fff;font-family:system-ui,sans-serif;opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;";
+    const hudIcon = document.createElement("span");
+    hudIcon.style.cssText = "font-size:27px;line-height:1;";
+    const hudText = document.createElement("span");
+    hudText.style.cssText = "font-size:14px;font-weight:800;white-space:nowrap;";
+    hud.append(hudIcon, hudText);
+    stage.append(video, hud);
 
     const hints = document.createElement("div");
-    hints.textContent = "← → 10s seek   •   ↑ ↓ volume   •   Mouse wheel volume";
+    hints.textContent = "Use ← → or the 10s buttons to seek   •   ↑ ↓ / mouse wheel for volume";
     hints.style.cssText =
       "padding:10px 18px;background:#0d1118;color:#8b97aa;font:600 12px/1.3 system-ui,sans-serif;text-align:center;";
     player.append(toolbar, stage, hints);
@@ -184,39 +199,80 @@
       opener?.focus();
     };
 
+    let hudTimer;
+    const showHud = (icon, text) => {
+      hudIcon.textContent = icon;
+      hudText.textContent = text;
+      hud.style.opacity = "1";
+      hud.style.transform = "translate(-50%,-50%) scale(1)";
+      clearTimeout(hudTimer);
+      hudTimer = setTimeout(() => {
+        hud.style.opacity = "0";
+        hud.style.transform = "translate(-50%,-42%) scale(.94)";
+      }, 900);
+    };
+    const showVolume = (volume) => {
+      showHud(volume === 0 ? "🔇" : "🔊", `Volume ${volume}%`);
+    };
+    const formatTime = (seconds) => {
+      const total = Math.max(0, Math.floor(seconds));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const secs = total % 60;
+      return hours
+        ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+        : `${minutes}:${String(secs).padStart(2, "0")}`;
+    };
+    const seekBy = (seconds) => {
+      const duration = Number.isFinite(video.duration) ? video.duration : Infinity;
+      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const targetTime = Math.max(0, Math.min(duration, currentTime + seconds));
+      video.currentTime = targetTime;
+      showHud(
+        seconds < 0 ? "↶" : "↷",
+        `${seconds < 0 ? "Back" : "Forward"} 10 seconds · ${formatTime(targetTime)}`,
+      );
+    };
+
     const onKeydown = (event) => {
       if (event.key === "Escape" && !document.fullscreenElement) {
         event.preventDefault();
         closePlayer();
       } else if (event.key === "ArrowUp") {
         event.preventDefault();
-        adjustVolume(video, 0.05);
+        event.stopPropagation();
+        showVolume(adjustVolume(video, 0.05));
       } else if (event.key === "ArrowDown") {
         event.preventDefault();
-        adjustVolume(video, -0.05);
+        event.stopPropagation();
+        showVolume(adjustVolume(video, -0.05));
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        video.currentTime = Math.min(
-          video.duration || Infinity,
-          video.currentTime + 10,
-        );
+        event.stopPropagation();
+        seekBy(10);
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
-        video.currentTime = Math.max(0, video.currentTime - 10);
+        event.stopPropagation();
+        seekBy(-10);
       }
     };
     const onWheel = (event) => {
       event.preventDefault();
-      adjustVolume(video, event.deltaY < 0 ? 0.05 : -0.05);
+      showVolume(adjustVolume(video, event.deltaY < 0 ? 0.05 : -0.05));
     };
-    overlay.addEventListener("keydown", onKeydown);
+    overlay.addEventListener("keydown", onKeydown, true);
     overlay.addEventListener("wheel", onWheel, { passive: false });
-    close.addEventListener("click", closePlayer);
-    fullscreen.addEventListener("click", () => {
-      if (document.fullscreenElement)
-        document.exitFullscreen?.().catch(() => {});
-      else overlay.requestFullscreen?.().catch(() => {});
+    back.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      seekBy(-10);
     });
+    forward.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      seekBy(10);
+    });
+    close.addEventListener("click", closePlayer);
     overlay.addEventListener("click", (event) => {
       if (event.target === overlay) closePlayer();
     });
