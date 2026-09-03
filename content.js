@@ -256,7 +256,14 @@
     video.playsInline = true;
     video.preload = "auto";
     video.controls = false;
-    video.volume = 0.2;
+
+    let prevVolume = 0.4;
+    try {
+      const v = parseFloat(localStorage.getItem("dm_player_volume"));
+      if (Number.isFinite(v) && v > 0) prevVolume = Math.min(1, v);
+      video.muted = localStorage.getItem("dm_player_muted") === "true";
+    } catch {}
+    video.volume = prevVolume;
     stage.appendChild(video);
 
     const centerPulse = document.createElement("div");
@@ -395,14 +402,41 @@
       }
     };
 
+    const noAudioBtn = document.createElement("button");
+    noAudioBtn.type = "button";
+    noAudioBtn.className = "dm-btn-action";
+    noAudioBtn.innerHTML = `<span>🔊 No Sound?</span>`;
+    noAudioBtn.title = "Audio troubleshooting (Dolby EAC3 / DTS)";
+
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "dm-btn-action dm-btn-close";
     closeBtn.innerHTML = `${ICONS.close} <span>Close</span>`;
     closeBtn.title = "Close player (Esc)";
 
-    topActions.append(copyBtn, downloadBtn, closeBtn);
+    topActions.append(noAudioBtn, copyBtn, downloadBtn, closeBtn);
     topBar.append(titleBox, topActions);
+
+    const audioModal = document.createElement("div");
+    audioModal.style.cssText = "position:absolute;inset:0;background:rgba(5,8,15,0.92);display:none;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;z-index:42;";
+    audioModal.innerHTML = `
+      <div style="max-width:440px;width:90vw;background:#0c121e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;color:#fff;text-align:center;display:flex;flex-direction:column;gap:12px;">
+        <div style="font-size:32px;line-height:1;">🔇</div>
+        <div style="font-size:15px;font-weight:800;">No Audio in Browser?</div>
+        <div style="font-size:13px;color:#94a3b8;line-height:1.6;text-align:left;">
+          Web browsers cannot decode multi-channel <b>Dolby Digital (AC3/E-AC3)</b> or <b>DTS</b> audio tracks. Copy the stream URL to play in VLC/MPV or download the file directly.
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:4px;">
+          <button id="dm-audio-copy" class="dm-btn-action" style="background:#e50914;border-color:#e50914;color:#fff;">${ICONS.copy} Copy Stream URL</button>
+          <button id="dm-audio-close" class="dm-btn-action">Got it</button>
+        </div>
+      </div>
+    `;
+    stage.appendChild(audioModal);
+    noAudioBtn.onclick = () => { audioModal.style.display = "flex"; };
+    audioModal.querySelector("#dm-audio-copy").onclick = () => { copyBtn.click(); audioModal.style.display = "none"; };
+    audioModal.querySelector("#dm-audio-close").onclick = () => { audioModal.style.display = "none"; };
+    audioModal.onclick = (e) => { if (e.target === audioModal) audioModal.style.display = "none"; };
 
     const bottomBar = document.createElement("div");
     bottomBar.className = "dm-floating-bottom";
@@ -469,9 +503,15 @@
     volSlider.appendChild(volFill);
     volumeBox.append(volumeBtn, volSlider);
 
+    let showRemaining = false;
     const timeDisplay = document.createElement("span");
     timeDisplay.textContent = "0:00 / 0:00";
-    timeDisplay.style.cssText = "color: #cbd5e1; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 10px; white-space: nowrap;";
+    timeDisplay.style.cssText = "color: #cbd5e1; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 10px; white-space: nowrap; cursor: pointer; user-select: none;";
+    timeDisplay.title = "Click to toggle remaining time";
+    timeDisplay.onclick = () => {
+      showRemaining = !showRemaining;
+      updateProgress();
+    };
 
     leftControls.append(playBtn, rewindBtn, fwdBtn, volumeBox, timeDisplay);
 
@@ -559,7 +599,8 @@
       const cur = seekTarget !== null ? seekTarget : video.currentTime;
       if (dur > 0) {
         playedBar.style.width = `${Math.min(100, Math.max(0, (cur / dur) * 100))}%`;
-        timeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+        const timeStr = showRemaining ? `-${formatTime(Math.max(0, dur - cur))}` : formatTime(cur);
+        timeDisplay.textContent = `${timeStr} / ${formatTime(dur)}`;
       } else {
         timeDisplay.textContent = `${formatTime(cur)} / 0:00`;
       }
@@ -610,18 +651,25 @@
       }
     }
 
-    let prevVolume = 0.2;
     function syncVolumeUI() {
       const effectiveVol = video.muted ? 0 : video.volume;
       volFill.style.width = `${Math.round(effectiveVol * 100)}%`;
       volumeBtn.innerHTML = (video.muted || effectiveVol === 0) ? ICONS.volumeMute : (effectiveVol < 0.5 ? ICONS.volumeLow : ICONS.volumeHigh);
     }
 
+    const saveVol = () => {
+      try {
+        localStorage.setItem("dm_player_volume", String(prevVolume));
+        localStorage.setItem("dm_player_muted", String(video.muted));
+      } catch {}
+    };
+
     function setVolume(level) {
       const clamped = Math.max(0, Math.min(1, Math.round(level * 100) / 100));
       video.volume = clamped;
       video.muted = clamped === 0;
       if (clamped > 0) prevVolume = clamped;
+      saveVol();
       syncVolumeUI();
       const effective = video.muted || clamped === 0 ? 0 : clamped;
       const icon = (video.muted || clamped === 0) ? ICONS.volumeMute : (clamped < 0.5 ? ICONS.volumeLow : ICONS.volumeHigh);
@@ -635,11 +683,12 @@
     function toggleMute() {
       if (video.muted || video.volume === 0) {
         video.muted = false;
-        video.volume = prevVolume > 0 ? prevVolume : 0.2;
+        video.volume = prevVolume > 0 ? prevVolume : 0.4;
       } else {
-        prevVolume = video.volume > 0 ? video.volume : 0.2;
+        prevVolume = video.volume > 0 ? video.volume : 0.4;
         video.muted = true;
       }
+      saveVol();
       syncVolumeUI();
       const effective = video.muted ? 0 : video.volume;
       const icon = video.muted ? ICONS.volumeMute : (video.volume < 0.5 ? ICONS.volumeLow : ICONS.volumeHigh);
@@ -661,18 +710,25 @@
     };
 
     function isFullscreenActive() {
-      return document.fullscreenElement === container || document.webkitFullscreenElement === container || container.classList.contains("is-fullscreen");
+      return !!(document.fullscreenElement || document.webkitFullscreenElement);
     }
 
     function toggleFullscreen() {
-      if (!isFullscreenActive()) {
-        (container.requestFullscreen?.() || container.webkitRequestFullscreen?.())?.catch?.(() => {});
-      } else {
-        (document.exitFullscreen?.() || document.webkitExitFullscreen?.())?.catch?.(() => {});
-      }
+      try {
+        if (!isFullscreenActive()) {
+          const p = container.requestFullscreen?.() || container.webkitRequestFullscreen?.();
+          if (p?.catch) p.catch(() => {});
+        } else {
+          const p = document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+          if (p?.catch) p.catch(() => {});
+        }
+      } catch {}
     }
 
-    fsBtn.onclick = toggleFullscreen;
+    fsBtn.onclick = (e) => {
+      e.stopPropagation();
+      toggleFullscreen();
+    };
 
     const onFullscreenChange = () => {
       const isFs = isFullscreenActive();
@@ -789,11 +845,24 @@
       })
     );
 
+    let clickTimer = null;
     stage.addEventListener("click", (e) => {
-      if (e.target === video || e.target === stage) togglePlay();
+      if (e.target !== video && e.target !== stage) return;
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+        return;
+      }
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        togglePlay();
+      }, 220);
     });
     stage.addEventListener("dblclick", (e) => {
-      if (e.target === video || e.target === stage) toggleFullscreen();
+      if (e.target !== video && e.target !== stage) return;
+      clearTimeout(clickTimer);
+      clickTimer = null;
+      toggleFullscreen();
     });
     stage.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -816,6 +885,7 @@
       clearTimeout(hudTimer);
       clearTimeout(seekDebounce);
       clearTimeout(controlsHideTimer);
+      clearTimeout(clickTimer);
       document.body.style.overflow = prevOverflow;
       video.pause();
       video.removeAttribute("src");
@@ -840,7 +910,8 @@
       "p": () => pipBtn.click(),
       "?": () => { helpModal.style.display = helpModal.style.display === "flex" ? "none" : "flex"; },
       "escape": () => {
-        if (helpModal.style.display === "flex") helpModal.style.display = "none";
+        if (audioModal.style.display === "flex") audioModal.style.display = "none";
+        else if (helpModal.style.display === "flex") helpModal.style.display = "none";
         else if (isFullscreenActive()) toggleFullscreen();
         else closePlayer();
       }

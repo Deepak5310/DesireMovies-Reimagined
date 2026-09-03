@@ -183,9 +183,17 @@ async function resolveHubCloudChain(hubUrl, onProgress) {
   return null;
 }
 
+const CACHE_TTL_MS = 3 * 3600 * 1000;
+
 async function resolveFullChain(url, onProgress) {
   await ready;
-  if (bypassCache.has(url)) return { success: true, downloadUrl: bypassCache.get(url) };
+  const cached = bypassCache.get(url);
+  if (cached) {
+    const dlUrl = typeof cached === "string" ? cached : cached.downloadUrl;
+    const ts = typeof cached === "string" ? 0 : cached.ts;
+    if (!ts || Date.now() - ts < CACHE_TTL_MS) return { success: true, downloadUrl: dlUrl };
+    bypassCache.delete(url);
+  }
 
   let finalUrl = "";
   if (RE_KMHD.test(url)) {
@@ -245,7 +253,7 @@ async function resolveFullChain(url, onProgress) {
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
-  bypassCache.set(url, finalUrl);
+  bypassCache.set(url, { downloadUrl: finalUrl, ts: Date.now() });
   persistState();
   return { success: true, downloadUrl: finalUrl };
 }
@@ -347,9 +355,10 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 const RE_TRAILING_DUP = /\s*\(\d+\)$/;
 const RE_BRACKETS = /[\[\]\(\)\{\}]/g;
 const RE_EP_PREFIX = /^EP((\.\d+)+)\./i;
-const RE_BRANDING = /[-\s]*\b(desiremovies|katmoviehd|katdrama|kmhd|moviesbaba)[\w\-.]*\b|[-\s]*\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|msubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|kor|x264|x265)\b/gi;
-const RE_SEASON = /\b(S\d{2})\b/gi;
-const RE_AUDIO_DOTS = /(5\.1|2\.0|7\.1|8\.1|2\.1)/g;
+const RE_SITE_BRAND = /\b(?:www\.)?(?:desiremovies|katmoviehd|katdrama|kmhd|moviesbaba)(?:\.(?:com|org|net|in|guru|fit|casa|cx|vip|lol|pro|tech|site|me|co|ws|cc|to|app|run|life|live|icu|top|art|xyz|pw))?\b/gi;
+const RE_TAGS = /\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|msubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|kor|x264|x265)\b/gi;
+const RE_SEASON_EP = /\bS(\d{2})(?:[.\-_]?(?:E|EP)?(\d{1,3})(?:-(?:E|EP)?(\d{1,3}))?)?\b/gi;
+const RE_AUDIO_DOTS = /\b(5\.1|2\.0|7\.1|8\.1|2\.1)\b/g;
 const RE_ALL_DOTS = /\./g;
 const RE_DOT_PLACEHOLDER = /_DOT_/g;
 const RE_NON_ALNUM = /[^a-zA-Z0-9\-.]/g;
@@ -377,8 +386,13 @@ function cleanFilename(filename) {
   });
 
   const clean = base
-    .replace(RE_BRANDING, "")
-    .replace(RE_SEASON, epTag ? `$1 ${epTag}` : "$1")
+    .replace(RE_SITE_BRAND, "")
+    .replace(RE_TAGS, "")
+    .replace(RE_SEASON_EP, (_, s, ep1, ep2) => {
+      if (!ep1) return epTag ? `S${s} ${epTag}` : `S${s}`;
+      const p1 = String(ep1).padStart(2, "0");
+      return ep2 ? `S${s} EP${p1}-${String(ep2).padStart(2, "0")}` : `S${s} EP${p1}`;
+    })
     .replace(RE_AUDIO_DOTS, (m) => m.replace(".", "_DOT_"))
     .replace(RE_ALL_DOTS, " ")
     .replace(RE_DOT_PLACEHOLDER, ".")

@@ -9,9 +9,8 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "action": {},
   "background": { "service_worker": "background.js" },
   "permissions": ["downloads", "storage", "scripting"],
-  "host_permissions": [
-    "<all_urls>"
-  ]
+  "host_permissions": ["<all_urls>"]
 }
