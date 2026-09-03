@@ -31,7 +31,8 @@ If the headless chain fails (e.g., a Cloudflare challenge or a major page struct
 ## Features
 
 - **Zero-tab download**: Entire chain resolved headlessly — download starts directly via `chrome.downloads`.
-- **Lightning Fast**: Three sequential fetches take ~2-3s total compared to opening/closing multiple tabs.
+- **Online Watch**: Seamless in-page Netflix-style video player with smooth 10s seeking, interactive scrubber, buffer indicator, animated HUD, PiP, volume controls, and external stream link copying.
+- **Lightning Fast**: Sequential fetches take ~2-3s total compared to opening/closing multiple tabs.
 - **Smart Filename Cleaning**: Strips site branding, preserves important quality/codec tags (like 1080p, WEB-DL, HEVC), and standardizes episode formats on every download.
 - **Bypass Cache**: Caches resolved download URLs per session so clicking the same link twice instantly downloads the file.
 - **Invisible Execution**: No popup UI, no options page, no bloat.
@@ -57,7 +58,8 @@ git clone https://github.com/Deepak5310/DesireMovies-Reimagined.git
 
 No configuration required. Once loaded:
 
-- **DesireMovies** — Click any download link. You'll see "⏳ Bypassing…" then "✅ Download started". No tabs open.
+- **DesireMovies / KatMovieHD / KMHD** — Click any download link to start a zero-tab headless download, or click `▶ Watch Online` to stream directly in the in-page video player.
+- **Player Shortcuts** — Space/K: Play/Pause, Left/Right/J/L: 10s Seek, Up/Down/Scroll: Volume, F: Fullscreen, P: Picture-in-Picture, Esc: Close.
 - **Downloads** — All filenames are automatically cleaned.
 
 ### Filename Examples
