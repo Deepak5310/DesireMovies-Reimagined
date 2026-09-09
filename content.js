@@ -26,6 +26,92 @@
     return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
   }
 
+  const PLAYBACK_CACHE_KEY = "dm_playback_cache";
+  const PLAYBACK_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  function getPlaybackKey(bypassUrl, streamUrl, titleText) {
+    try {
+      if (bypassUrl) {
+        const u = new URL(bypassUrl, window.location.href);
+        return u.origin + u.pathname;
+      }
+    } catch {}
+    try {
+      if (streamUrl) {
+        const u = new URL(streamUrl, window.location.href);
+        return u.pathname.split("/").pop() || u.pathname;
+      }
+    } catch {}
+    return titleText ? titleText.trim().toLowerCase() : null;
+  }
+
+  function cleanPlaybackCache(cache = {}) {
+    const now = Date.now();
+    const clean = {};
+    for (const [k, v] of Object.entries(cache || {})) {
+      if (v?.time && typeof v.time === "number" && now - (v.updatedAt || 0) < PLAYBACK_TTL_MS) {
+        clean[k] = v;
+      }
+    }
+    return clean;
+  }
+
+  function updatePlaybackStore(updater) {
+    try {
+      const local = updater(cleanPlaybackCache(JSON.parse(localStorage.getItem(PLAYBACK_CACHE_KEY) || "{}")));
+      localStorage.setItem(PLAYBACK_CACHE_KEY, JSON.stringify(local));
+    } catch {}
+
+    if (chrome?.storage?.local) {
+      chrome.storage.local.get([PLAYBACK_CACHE_KEY], (res) => {
+        const updated = updater(cleanPlaybackCache(res?.[PLAYBACK_CACHE_KEY]));
+        chrome.storage.local.set({ [PLAYBACK_CACHE_KEY]: updated }).catch(() => {});
+      });
+    }
+  }
+
+  function getSavedPlayback(key) {
+    return new Promise((resolve) => {
+      if (!key) return resolve(null);
+      const readLocal = () => {
+        try {
+          const cache = cleanPlaybackCache(JSON.parse(localStorage.getItem(PLAYBACK_CACHE_KEY) || "{}"));
+          return cache[key]?.time || null;
+        } catch {
+          return null;
+        }
+      };
+      if (chrome?.storage?.local) {
+        chrome.storage.local.get([PLAYBACK_CACHE_KEY], (res) => {
+          const cache = cleanPlaybackCache(res?.[PLAYBACK_CACHE_KEY]);
+          resolve(cache[key]?.time || readLocal());
+        });
+      } else {
+        resolve(readLocal());
+      }
+    });
+  }
+
+  function savePlayback(key, time, duration) {
+    if (!key || !Number.isFinite(time) || time < 5) return;
+    updatePlaybackStore((cache) => {
+      if (duration && time >= duration - 15) {
+        delete cache[key];
+      } else {
+        cache[key] = { time: Math.round(time), duration: Math.round(duration || 0), updatedAt: Date.now() };
+      }
+      return cache;
+    });
+  }
+
+  function clearPlayback(key) {
+    if (!key) return;
+    updatePlaybackStore((cache) => {
+      delete cache[key];
+      return cache;
+    });
+  }
+
   function findAnchorForUrl(url) {
     return activeAnchors.get(url) || document.querySelector(`a[href="${CSS.escape(url)}"]`);
   }
@@ -234,6 +320,45 @@
           border-radius: 50%; animation: dm-spin 0.75s linear infinite; pointer-events: none; display: none; z-index: 28;
           box-shadow: 0 0 20px rgba(229, 9, 20, 0.4);
         }
+        @keyframes dm-slide-down {
+          0% { opacity: 0; transform: translate(-50%, -14px); }
+          100% { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .dm-resume-banner {
+          position: absolute; top: 68px; left: 50%; transform: translateX(-50%);
+          z-index: 35; display: flex; align-items: center; gap: 14px;
+          padding: 8px 16px; border-radius: 8px;
+          background: rgba(10, 15, 26, 0.94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
+          color: #ffffff; font-size: 13px; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          animation: dm-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          transition: opacity 0.25s ease, transform 0.25s ease;
+          white-space: nowrap; max-width: 90vw;
+        }
+        .dm-resume-banner.dm-hidden {
+          opacity: 0; transform: translate(-50%, -14px); pointer-events: none;
+        }
+        .dm-resume-btn {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 700;
+          cursor: pointer; transition: all 0.15s ease; outline: none; border: none;
+        }
+        .dm-resume-btn-primary {
+          background: #e50914; color: #ffffff; box-shadow: 0 2px 8px rgba(229, 9, 20, 0.4);
+        }
+        .dm-resume-btn-primary:hover {
+          background: #f40612; transform: translateY(-1px);
+        }
+        .dm-resume-btn-secondary {
+          background: rgba(255, 255, 255, 0.12); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .dm-resume-btn-secondary:hover {
+          background: rgba(255, 255, 255, 0.22); color: #ffffff;
+        }
+        .dm-resume-close {
+          background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1; margin-left: 2px;
+        }
+        .dm-resume-close:hover { color: #ffffff; }
       `;
       document.head.appendChild(styleTag);
     }
@@ -639,6 +764,69 @@
       triggerPulse(deltaSeconds > 0 ? ICONS.forward10 : ICONS.replay10);
     }
 
+    const videoKey = getPlaybackKey(bypassUrl, streamUrl, titleText);
+    let resumeBanner = null;
+    let resumeTimer = null;
+
+    function dismissResumeBanner() {
+      clearTimeout(resumeTimer);
+      resumeTimer = null;
+      if (resumeBanner) {
+        resumeBanner.classList.add("dm-hidden");
+        setTimeout(() => {
+          resumeBanner?.remove();
+          resumeBanner = null;
+        }, 250);
+      }
+    }
+
+    getSavedPlayback(videoKey).then((savedTime) => {
+      if (!savedTime || savedTime < 5 || !document.contains(overlay)) return;
+
+      resumeBanner = document.createElement("div");
+      resumeBanner.className = "dm-resume-banner";
+      resumeBanner.innerHTML = `
+        <div style="display:flex;align-items:center;gap:7px;">
+          <span style="font-size:15px;">⏱️</span>
+          <span>Resume from <b>${formatTime(savedTime)}</b>?</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button type="button" class="dm-resume-btn dm-resume-btn-primary">▶ Resume</button>
+          <button type="button" class="dm-resume-btn dm-resume-btn-secondary">↺ Start from beginning</button>
+          <button type="button" class="dm-resume-close" title="Dismiss">✕</button>
+        </div>
+      `;
+
+      const resumeBtn = resumeBanner.querySelector(".dm-resume-btn-primary");
+      const restartBtn = resumeBanner.querySelector(".dm-resume-btn-secondary");
+      const closeResumeBtn = resumeBanner.querySelector(".dm-resume-close");
+
+      resumeBtn.onclick = (e) => {
+        e.stopPropagation();
+        seekTo(savedTime);
+        video.play().catch(() => {});
+        showHud("⏱️", formatTime(savedTime));
+        dismissResumeBanner();
+      };
+
+      restartBtn.onclick = (e) => {
+        e.stopPropagation();
+        seekTo(0);
+        clearPlayback(videoKey);
+        video.play().catch(() => {});
+        showHud("↺", "0:00");
+        dismissResumeBanner();
+      };
+
+      closeResumeBtn.onclick = (e) => {
+        e.stopPropagation();
+        dismissResumeBanner();
+      };
+
+      stage.appendChild(resumeBanner);
+      resumeTimer = setTimeout(dismissResumeBanner, 10000);
+    });
+
     function togglePlay() {
       if (video.paused) {
         video.play().catch(() => {});
@@ -740,8 +928,23 @@
     document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
     video.addEventListener("play", () => { playBtn.innerHTML = ICONS.pause; });
-    video.addEventListener("pause", () => { playBtn.innerHTML = ICONS.play; });
-    video.addEventListener("timeupdate", () => { updateProgress(); updateBuffer(); });
+    video.addEventListener("pause", () => {
+      playBtn.innerHTML = ICONS.play;
+      savePlayback(videoKey, video.currentTime, getValidDuration());
+    });
+    let lastSavedSec = 0;
+    video.addEventListener("timeupdate", () => {
+      updateProgress();
+      updateBuffer();
+      const cur = video.currentTime;
+      if (Math.abs(cur - lastSavedSec) >= 3) {
+        lastSavedSec = cur;
+        savePlayback(videoKey, cur, getValidDuration());
+      }
+    });
+    video.addEventListener("ended", () => {
+      clearPlayback(videoKey);
+    });
     video.addEventListener("loadedmetadata", () => { updateProgress(); updateBuffer(); syncVolumeUI(); });
     video.addEventListener("progress", updateBuffer);
 
@@ -882,6 +1085,10 @@
       window.removeEventListener("keydown", onKeydown, true);
       window.removeEventListener("mousemove", onGlobalMouseMove);
       window.removeEventListener("mouseup", onGlobalMouseUp);
+      window.removeEventListener("pagehide", onPageHide);
+      clearTimeout(resumeTimer);
+      if (resumeBanner) resumeBanner.remove();
+      savePlayback(videoKey, video.currentTime, getValidDuration());
       clearTimeout(hudTimer);
       clearTimeout(seekDebounce);
       clearTimeout(controlsHideTimer);
@@ -893,6 +1100,9 @@
       overlay.remove();
       openerBtn?.focus();
     }
+
+    const onPageHide = () => savePlayback(videoKey, video.currentTime, getValidDuration());
+    window.addEventListener("pagehide", onPageHide);
 
     closeBtn.addEventListener("click", closePlayer);
     overlay.addEventListener("click", (e) => {
