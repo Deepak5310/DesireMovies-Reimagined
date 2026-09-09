@@ -172,196 +172,13 @@
     document.body.style.overflow = "hidden";
 
     if (!document.getElementById("dm-player-injected-styles")) {
-      const styleTag = document.createElement("style");
-      styleTag.id = "dm-player-injected-styles";
-      styleTag.textContent = `
-        .dm-overlay-root {
-          position: fixed; inset: 0; z-index: 2147483647;
-          display: flex; align-items: center; justify-content: center;
-          background: rgba(4, 7, 14, 0.94); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          user-select: none; -webkit-user-select: none;
-        }
-        .dm-player-container {
-          position: relative; width: min(1360px, 95vw); height: min(765px, 92vh);
-          background: #000; border-radius: 14px; overflow: hidden;
-          box-shadow: 0 35px 120px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.12);
-          display: flex; flex-direction: column; outline: none;
-        }
-        .dm-player-container.is-fullscreen,
-        .dm-player-container:fullscreen,
-        .dm-player-container:-webkit-full-screen {
-          width: 100vw !important; height: 100vh !important;
-          max-width: 100vw !important; max-height: 100vh !important;
-          border-radius: 0 !important; border: none !important; box-shadow: none !important;
-        }
-        .dm-video-stage {
-          position: relative; width: 100%; height: 100%;
-          display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden;
-        }
-        .dm-video-el {
-          width: 100%; height: 100%; object-fit: contain; background: #000; display: block; outline: none;
-        }
-        .dm-floating-top, .dm-floating-bottom {
-          position: absolute; left: 0; right: 0; z-index: 25;
-          transition: opacity 0.25s ease, transform 0.25s ease;
-        }
-        .dm-floating-top {
-          top: 0; padding: 16px 22px;
-          background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 65%, transparent 100%);
-          display: flex; align-items: center; justify-content: space-between; gap: 16px;
-        }
-        .dm-floating-bottom {
-          bottom: 0; padding: 24px 20px 14px;
-          background: linear-gradient(0deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
-          display: flex; flex-direction: column; gap: 8px;
-        }
-        .dm-controls-hidden { opacity: 0 !important; pointer-events: none !important; }
-        .dm-floating-top.dm-controls-hidden { transform: translateY(-8px); }
-        .dm-floating-bottom.dm-controls-hidden { transform: translateY(8px); }
-        .dm-btn-action {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 7px 12px; border-radius: 7px; font-size: 12px; font-weight: 700;
-          border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.08);
-          color: #f1f5f9; cursor: pointer; transition: all 0.15s ease; outline: none;
-        }
-        .dm-btn-action:hover { background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.3); color: #fff; }
-        .dm-btn-close { border-color: rgba(229, 9, 20, 0.4); background: rgba(229, 9, 20, 0.15); color: #ff99a0; }
-        .dm-btn-close:hover { background: rgba(229, 9, 20, 0.35); border-color: #e50914; color: #fff; }
-        .dm-ctrl-btn {
-          display: inline-flex; align-items: center; justify-content: center;
-          width: 36px; height: 36px; border-radius: 50%;
-          background: transparent; border: none; color: #f8fafc;
-          cursor: pointer; transition: all 0.15s ease; outline: none;
-        }
-        .dm-ctrl-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; transform: scale(1.08); }
-        .dm-ctrl-btn:active { transform: scale(0.96); }
-        .dm-progress-track {
-          position: relative; width: 100%; height: 5px; background: rgba(255, 255, 255, 0.22);
-          border-radius: 3px; cursor: pointer; transition: height 0.15s ease; display: flex; align-items: center;
-        }
-        .dm-progress-track:hover, .dm-progress-track.is-dragging { height: 8px; }
-        .dm-buffer-bar, .dm-played-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; border-radius: 3px; pointer-events: none; }
-        .dm-buffer-bar { background: rgba(255, 255, 255, 0.35); }
-        .dm-played-bar { background: #e50914; }
-        .dm-scrubber-thumb {
-          position: absolute; top: 50%; right: 0; width: 14px; height: 14px; border-radius: 50%;
-          background: #e50914; border: 2.5px solid #ffffff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
-          transform: translate(50%, -50%) scale(0); transition: transform 0.12s ease; pointer-events: none;
-        }
-        .dm-progress-track:hover .dm-scrubber-thumb, .dm-progress-track.is-dragging .dm-scrubber-thumb { transform: translate(50%, -50%) scale(1); }
-        .dm-time-tooltip {
-          position: absolute; bottom: 18px; transform: translateX(-50%); padding: 4px 8px;
-          background: rgba(12, 16, 26, 0.95); border: 1px solid rgba(255, 255, 255, 0.15);
-          color: #fff; font-size: 11px; font-weight: 700; border-radius: 5px;
-          pointer-events: none; opacity: 0; transition: opacity 0.1s ease; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        }
-        .dm-volume-box { display: flex; align-items: center; gap: 8px; position: relative; }
-        .dm-vol-slider {
-          width: 68px; height: 4px; background: rgba(255, 255, 255, 0.25); border-radius: 2px; position: relative; cursor: pointer; transition: height 0.15s ease;
-        }
-        .dm-vol-slider:hover, .dm-vol-slider.is-dragging { height: 6px; }
-        .dm-vol-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: #e50914; border-radius: 2px; pointer-events: none; }
-        .dm-vol-thumb {
-          position: absolute; top: 50%; right: 0; width: 10px; height: 10px; border-radius: 50%;
-          background: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.6); transform: translate(50%, -50%); pointer-events: none;
-        }
-        @keyframes dm-spin { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
-        @keyframes dm-pulse-flash {
-          0% { transform: translate(-50%, -50%) scale(0.55); opacity: 0; }
-          35% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-          100% { transform: translate(-50%, -50%) scale(1.45); opacity: 0; }
-        }
-        .dm-center-pulse {
-          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.55);
-          width: 72px; height: 72px; border-radius: 50%;
-          background: rgba(8, 12, 22, 0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-          border: 2px solid rgba(255, 255, 255, 0.28);
-          display: flex; align-items: center; justify-content: center; color: #ffffff; opacity: 0; pointer-events: none; z-index: 24;
-        }
-        .dm-center-pulse svg { width: 34px; height: 34px; }
-        .dm-center-pulse.show { animation: dm-pulse-flash 0.5s ease-out forwards; }
-        .dm-speed-pill {
-          padding: 4px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.1);
-          border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; font-size: 12px; font-weight: 800;
-          letter-spacing: 0.04em; cursor: pointer; transition: all 0.15s ease;
-        }
-        .dm-speed-pill:hover { background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.35); }
-        .dm-hud-popup {
-          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.85);
-          width: 82px; height: 82px; border-radius: 50%; background: transparent; border: none; box-shadow: none;
-          display: flex; align-items: center; justify-content: center; color: #ffffff; opacity: 0; pointer-events: none;
-          transition: opacity 0.16s ease, transform 0.18s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 30;
-        }
-        .dm-hud-popup.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-        .dm-hud-ring-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-        .dm-hud-ring-bg { fill: none; stroke: rgba(255, 255, 255, 0.18); stroke-width: 4; }
-        .dm-hud-ring-bar {
-          fill: none; stroke: #e50914; stroke-width: 4; stroke-linecap: round;
-          stroke-dasharray: 226.2; stroke-dashoffset: 226.2; transform: rotate(-90deg); transform-origin: 50% 50%;
-          filter: drop-shadow(0 0 8px #e50914) drop-shadow(0 0 16px rgba(229, 9, 20, 0.5));
-          transition: stroke-dashoffset 0.08s ease-out;
-        }
-        .dm-hud-content {
-          position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-          color: #ffffff; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.95));
-        }
-        .dm-hud-icon { display: flex; align-items: center; justify-content: center; line-height: 1; color: #ffffff; }
-        .dm-hud-icon svg { width: 24px; height: 24px; fill: currentColor; display: block; }
-        .dm-hud-text {
-          font-size: 13px; font-weight: 900; white-space: nowrap; max-width: 62px;
-          overflow: hidden; text-overflow: ellipsis; text-align: center; color: #ffffff;
-          letter-spacing: 0.6px; line-height: 1.1; font-variant-numeric: tabular-nums;
-          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95);
-        }
-        .dm-buffering-spinner {
-          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-          width: 56px; height: 56px; border: 4px solid rgba(255, 255, 255, 0.18); border-top-color: #e50914;
-          border-radius: 50%; animation: dm-spin 0.75s linear infinite; pointer-events: none; display: none; z-index: 28;
-          box-shadow: 0 0 20px rgba(229, 9, 20, 0.4);
-        }
-        @keyframes dm-slide-down {
-          0% { opacity: 0; transform: translate(-50%, -14px); }
-          100% { opacity: 1; transform: translate(-50%, 0); }
-        }
-        .dm-resume-banner {
-          position: absolute; top: 68px; left: 50%; transform: translateX(-50%);
-          z-index: 35; display: flex; align-items: center; gap: 14px;
-          padding: 8px 16px; border-radius: 8px;
-          background: rgba(10, 15, 26, 0.94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-          border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
-          color: #ffffff; font-size: 13px; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          animation: dm-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-          transition: opacity 0.25s ease, transform 0.25s ease;
-          white-space: nowrap; max-width: 90vw;
-        }
-        .dm-resume-banner.dm-hidden {
-          opacity: 0; transform: translate(-50%, -14px); pointer-events: none;
-        }
-        .dm-resume-btn {
-          display: inline-flex; align-items: center; gap: 5px;
-          padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 700;
-          cursor: pointer; transition: all 0.15s ease; outline: none; border: none;
-        }
-        .dm-resume-btn-primary {
-          background: #e50914; color: #ffffff; box-shadow: 0 2px 8px rgba(229, 9, 20, 0.4);
-        }
-        .dm-resume-btn-primary:hover {
-          background: #f40612; transform: translateY(-1px);
-        }
-        .dm-resume-btn-secondary {
-          background: rgba(255, 255, 255, 0.12); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.18);
-        }
-        .dm-resume-btn-secondary:hover {
-          background: rgba(255, 255, 255, 0.22); color: #ffffff;
-        }
-        .dm-resume-close {
-          background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1; margin-left: 2px;
-        }
-        .dm-resume-close:hover { color: #ffffff; }
-      `;
-      document.head.appendChild(styleTag);
+      const link = document.createElement("link");
+      link.id = "dm-player-injected-styles";
+      link.rel = "stylesheet";
+      link.href = chrome?.runtime?.getURL ? chrome.runtime.getURL("player.css") : "player.css";
+      document.head.appendChild(link);
     }
+
 
     const overlay = document.createElement("div");
     overlay.id = "desiremovies-watch-overlay";
@@ -469,6 +286,8 @@
       <div style="display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; justify-content: center;">
         <button id="dm-err-dl" class="dm-btn-action" style="background: #e50914; border-color: #e50914; color: #fff;">${ICONS.download} Download File</button>
         <button id="dm-err-copy" class="dm-btn-action">${ICONS.copy} Copy Stream URL</button>
+        <button id="dm-err-mpv" class="dm-btn-action">▶ Copy MPV</button>
+        <a id="dm-err-vlc" class="dm-btn-action" href="vlc://${streamUrl}">🚀 Open VLC</a>
         <button id="dm-err-open" class="dm-btn-action">🌐 Open in New Tab</button>
       </div>
     `;
@@ -551,17 +370,31 @@
         <div style="font-size:13px;color:#94a3b8;line-height:1.6;text-align:left;">
           Web browsers cannot decode multi-channel <b>Dolby Digital (AC3/E-AC3)</b> or <b>DTS</b> audio tracks. Copy the stream URL to play in VLC/MPV or download the file directly.
         </div>
-        <div style="display:flex;gap:10px;justify-content:center;margin-top:4px;">
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
           <button id="dm-audio-copy" class="dm-btn-action" style="background:#e50914;border-color:#e50914;color:#fff;">${ICONS.copy} Copy Stream URL</button>
+          <button id="dm-audio-mpv" class="dm-btn-action">▶ Copy MPV</button>
+          <a id="dm-audio-vlc" class="dm-btn-action" href="vlc://${streamUrl}">🚀 Open VLC</a>
           <button id="dm-audio-close" class="dm-btn-action">Got it</button>
         </div>
       </div>
     `;
     stage.appendChild(audioModal);
+
+    const copyMpvCmd = async (btn) => {
+      try {
+        await navigator.clipboard.writeText(`mpv "${streamUrl}"`);
+        flashBtn(btn, "✓ <span>Copied MPV!</span>", 2000, "▶ Copy MPV");
+      } catch (e) {
+        flashBtn(btn, "❌ <span>Failed</span>", 2000, "▶ Copy MPV");
+      }
+    };
+
     noAudioBtn.onclick = () => { audioModal.style.display = "flex"; };
     audioModal.querySelector("#dm-audio-copy").onclick = () => { copyBtn.click(); audioModal.style.display = "none"; };
+    audioModal.querySelector("#dm-audio-mpv").onclick = function () { copyMpvCmd(this); };
     audioModal.querySelector("#dm-audio-close").onclick = () => { audioModal.style.display = "none"; };
     audioModal.onclick = (e) => { if (e.target === audioModal) audioModal.style.display = "none"; };
+    errorBox.querySelector("#dm-err-mpv")?.addEventListener("click", function () { copyMpvCmd(this); });
 
     const bottomBar = document.createElement("div");
     bottomBar.className = "dm-floating-bottom";
@@ -1150,8 +983,10 @@
     video.play().catch(() => {});
   }
 
-  function addWatchButtons() {
-    const anchors = document.querySelectorAll("a[href]");
+  function addWatchButtons(targetRoot) {
+    const root = targetRoot || document.querySelector("main, article, #content, .content, .entry-content") || document.body;
+    if (!root) return;
+    const anchors = root.querySelectorAll("a[href]");
     for (const anchor of anchors) {
       const href = anchor.getAttribute("href");
       if (!href || !BYPASS_LINK_RE.test(href) || /\/pack\//i.test(href)) continue;
@@ -1224,13 +1059,19 @@
     }, 250);
   };
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", addWatchButtons);
-  } else {
+  const initObserver = () => {
     addWatchButtons();
-  }
+    const target = document.querySelector("main, article, #content, .content, .entry-content") || document.body || document.documentElement;
+    if (target) {
+      new MutationObserver(debouncedAddWatchButtons).observe(target, { childList: true, subtree: true });
+    }
+  };
 
-  new MutationObserver(debouncedAddWatchButtons).observe(document.body || document.documentElement, { childList: true, subtree: true });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initObserver);
+  } else {
+    initObserver();
+  }
 
   if (/\/pack\//i.test(window.location.pathname) || /\/pack\//i.test(window.location.href)) {
     const initPackBtn = () => {

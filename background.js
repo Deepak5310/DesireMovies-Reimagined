@@ -2,6 +2,7 @@
 
 const activeBypasses = new Map();
 const bypassCache = new Map();
+const CACHE_TTL_MS = 3 * 3600 * 1000;
 
 const GDFLIX_HREF_RE = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
 const HUBCLOUD_HREF_RE = /href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['"]/i;
@@ -15,16 +16,26 @@ const RE_HUBCLOUD = /^https?:\/\/[^/]*(hubcloud|hubdrive|gamerxyt|sportverse)/i;
 const RE_BYPASS_URL = /^https?:\/\/[^/]*(gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
 const RE_INJECT_DOMAINS = /^https?:\/\/[^/]*(desiremovies|katmoviehd|katdrama|moviesbaba|kmhd|gdflix|goflix|hubcloud|hubdrive)/i;
 
+function pruneCache() {
+  const now = Date.now();
+  for (const [k, v] of bypassCache.entries()) {
+    const ts = typeof v === "string" ? 0 : v?.ts;
+    if (ts && now - ts >= CACHE_TTL_MS) bypassCache.delete(k);
+  }
+}
+
 const ready = (async () => {
   try {
     const { bypassCache: cached } = await chrome.storage.session.get(["bypassCache"]);
     if (cached) {
       for (const [k, v] of Object.entries(cached)) bypassCache.set(k, v);
+      pruneCache();
     }
   } catch {}
 })();
 
 function persistState() {
+  pruneCache();
   chrome.storage.session.set({ bypassCache: Object.fromEntries(bypassCache) }).catch(() => {});
 }
 
@@ -137,6 +148,7 @@ function sendProgress(tabId, targetUrl, statusText) {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading" && tab.url && RE_INJECT_DOMAINS.test(tab.url)) {
+    chrome.scripting.insertCSS({ target: { tabId }, files: ["player.css"] }).catch(() => {});
     chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
   }
 });
@@ -182,8 +194,6 @@ async function resolveHubCloudChain(hubUrl, onProgress) {
   }
   return null;
 }
-
-const CACHE_TTL_MS = 3 * 3600 * 1000;
 
 async function resolveFullChain(url, onProgress) {
   await ready;
@@ -289,16 +299,23 @@ async function resolvePackChain(packUrl, providedFileUrls = [], onProgress) {
   if (!fileUrls.length) throw new Error("No episodes found in pack");
 
   let startedCount = 0;
-  for (let i = 0; i < fileUrls.length; i++) {
-    onProgress?.(`⏳ Episode ${i + 1}/${fileUrls.length}: Resolving stream…`);
-    try {
-      const result = await resolveFullChain(fileUrls[i]);
-      if (result?.downloadUrl) {
-        chrome.downloads.download({ url: result.downloadUrl });
-        startedCount++;
-      }
-    } catch {}
-  }
+  let completed = 0;
+  const queue = fileUrls.map((url, idx) => ({ url, idx }));
+  const worker = async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      onProgress?.(`⏳ Episode ${item.idx + 1}/${fileUrls.length}: Resolving… (${completed}/${fileUrls.length} done)`);
+      try {
+        const result = await resolveFullChain(item.url);
+        if (result?.downloadUrl) {
+          chrome.downloads.download({ url: result.downloadUrl });
+          startedCount++;
+        }
+      } catch {}
+      completed++;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, fileUrls.length) }, worker));
 
   return { success: startedCount > 0, count: startedCount, total: fileUrls.length };
 }
@@ -411,7 +428,7 @@ function cleanFilename(filename) {
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   if (item.byExtensionId !== chrome.runtime.id) { suggest(); return; }
   try {
-    suggest({ filename: cleanFilename(item.filename) });
+    suggest({ filename: cleanFilename(item.filename), conflictAction: "uniquify" });
   } catch {
     suggest();
   }
