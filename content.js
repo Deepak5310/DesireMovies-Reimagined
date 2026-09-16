@@ -173,7 +173,10 @@
             <div class="dm-progress-track">
               <div class="dm-buffer-bar"></div>
               <div class="dm-played-bar"><div class="dm-scrubber-thumb"></div></div>
-              <div class="dm-time-tooltip"></div>
+              <div class="dm-preview-card">
+                <video class="dm-preview-thumb" muted preload="auto" playsinline></video>
+                <div class="dm-time-tooltip"></div>
+              </div>
             </div>
             <div class="dm-controls-row">
               <div class="dm-controls-left">
@@ -217,6 +220,8 @@
     const track = overlay.querySelector(".dm-progress-track");
     const playedBar = overlay.querySelector(".dm-played-bar");
     const bufferBar = overlay.querySelector(".dm-buffer-bar");
+    const previewCard = overlay.querySelector(".dm-preview-card");
+    const previewThumb = overlay.querySelector(".dm-preview-thumb");
     const tooltip = overlay.querySelector(".dm-time-tooltip");
     const timeDisplay = overlay.querySelector(".dm-time-display");
     const volBtn = overlay.querySelector("#dm-vol-btn");
@@ -345,24 +350,39 @@
     }
     stage.addEventListener("mousemove", pokeControls);
 
-    // Timeline Scrubbing
+    // Timeline Scrubbing & Hover Preview
     let isScrubbing = false;
+    let lastPreviewSeek = 0;
+    previewThumb.src = streamUrl;
+    previewThumb.onloadeddata = () => previewThumb.classList.add("is-ready");
+    previewThumb.onerror = () => previewThumb.classList.remove("is-ready");
+
+    function updatePreview(e) {
+      const r = track.getBoundingClientRect(), dur = getDur();
+      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      if (dur > 0) {
+        const t = pct * dur;
+        tooltip.textContent = fmtTime(t);
+        const cardX = Math.max(75, Math.min(r.width - 75, e.clientX - r.left));
+        previewCard.style.left = `${cardX}px`;
+        previewCard.classList.add("show");
+
+        const now = Date.now();
+        if (now - lastPreviewSeek > 120 && previewThumb.classList.contains("is-ready")) {
+          lastPreviewSeek = now;
+          previewThumb.currentTime = t;
+        }
+      }
+    }
+
     function scrubTrack(e) {
       const r = track.getBoundingClientRect(), dur = getDur();
       const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
       if (dur > 0) video.currentTime = pct * dur;
     }
     track.onmousedown = (e) => { isScrubbing = true; track.classList.add("is-dragging"); scrubTrack(e); };
-    track.onmousemove = (e) => {
-      const r = track.getBoundingClientRect(), dur = getDur();
-      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-      if (dur > 0) {
-        tooltip.textContent = fmtTime(pct * dur);
-        tooltip.style.left = `${e.clientX - r.left}px`;
-        tooltip.style.opacity = "1";
-      }
-    };
-    track.onmouseleave = () => { if (!isScrubbing) tooltip.style.opacity = "0"; };
+    track.onmousemove = updatePreview;
+    track.onmouseleave = () => { if (!isScrubbing) previewCard.classList.remove("show"); };
 
     // Volume Scrubbing
     let isVolScrubbing = false;
@@ -373,11 +393,11 @@
     volSlider.onmousedown = (e) => { isVolScrubbing = true; scrubVol(e); };
 
     window.addEventListener("mousemove", (e) => {
-      if (isScrubbing) scrubTrack(e);
+      if (isScrubbing) { scrubTrack(e); updatePreview(e); }
       if (isVolScrubbing) scrubVol(e);
     });
     window.addEventListener("mouseup", () => {
-      if (isScrubbing) { isScrubbing = false; track.classList.remove("is-dragging"); tooltip.style.opacity = "0"; }
+      if (isScrubbing) { isScrubbing = false; track.classList.remove("is-dragging"); previewCard.classList.remove("show"); }
       isVolScrubbing = false;
     });
 
@@ -473,6 +493,9 @@
       video.pause();
       video.removeAttribute("src");
       video.load();
+      previewThumb.pause();
+      previewThumb.removeAttribute("src");
+      previewThumb.load();
       overlay.remove();
       openerBtn?.focus();
     }

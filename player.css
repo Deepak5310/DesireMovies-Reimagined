@@ -96,10 +96,22 @@
 }
 .dm-progress-track:hover .dm-scrubber-thumb, .dm-progress-track.is-dragging .dm-scrubber-thumb { transform: translate(50%, -50%) scale(1); }
 
+.dm-preview-card {
+  position: absolute; bottom: 18px; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  pointer-events: none; opacity: 0; transition: opacity 0.12s ease; z-index: 30;
+}
+.dm-preview-card.show { opacity: 1; }
+.dm-preview-thumb {
+  width: 150px; height: 84px; object-fit: cover; background: #000;
+  border-radius: 6px; border: 1.5px solid rgba(255,255,255,0.25);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.8); display: none;
+}
+.dm-preview-thumb.is-ready { display: block; }
 .dm-time-tooltip {
-  position: absolute; bottom: 18px; transform: translateX(-50%); padding: 3px 6px;
-  background: rgba(12,16,26,0.95); border: 1px solid rgba(255,255,255,0.15); color: #fff;
-  font-size: 11px; font-weight: 700; border-radius: 4px; pointer-events: none; opacity: 0; white-space: nowrap;
+  padding: 3px 7px; background: rgba(12,16,26,0.95);
+  border: 1px solid rgba(255,255,255,0.18); color: #fff;
+  font-size: 11px; font-weight: 700; border-radius: 4px; white-space: nowrap;
 }
 
 /* Volume Slider */
