@@ -1,0 +1,16 @@
+{
+  "name": "desiremovies-telegram-bot",
+  "version": "1.0.0",
+  "description": "Automated DesireMovies post tracker and direct link bypass bot for Telegram",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "grammy": "^1.35.0"
+  }
+}
