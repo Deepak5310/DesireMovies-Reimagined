@@ -7,6 +7,30 @@ const HEADERS = {
 
 const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
 
+export function parseTitle(raw) {
+  if (!raw) return { cleanName: "Unknown", year: "", season: "", displayTitle: "Unknown" };
+  let title = raw.replace(/^Download\s+/i, "");
+  const yearMatch = title.match(/\((19\d\d|20\d\d)\)/);
+  const year = yearMatch ? yearMatch[1] : "";
+  const seasonMatch = title.match(/\[?(?:Season|S)\s*(\d{1,2})\]?/i);
+  const season = seasonMatch ? `Season ${seasonMatch[1]}` : "";
+
+  let cleanName = title
+    .replace(/\((?:19|20)\d\d\).*/i, "")
+    .replace(/\[?(?:Season|S)\s*\d+\]?.*/i, "")
+    .replace(/WEB-HDRip|WEB-DL|BluRay|HDTV|HDRip|x264|x265|HEVC|Dual Audio|Hindi|Esubs|ORG|DD\s*5\.1|480p|720p|1080p|4K|2160p/gi, "")
+    .replace(/[\[\]\(\)\{\}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return {
+    cleanName: cleanName || title,
+    year,
+    season,
+    displayTitle: year ? `${cleanName} (${year})` : cleanName,
+  };
+}
+
 export async function scrapePost(postUrl) {
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), 20000);
@@ -70,21 +94,14 @@ export async function scrapePost(postUrl) {
       if (RE_BYPASS.test(href) || /download|drive|hub|gdflix|watch|stream/i.test(text)) {
         seenUrls.add(href);
 
-        let label = text;
         const qual = currentQuality || detectQuality(text) || "Direct Link";
-        const sizeStr = currentSize ? ` [${currentSize}]` : "";
-
-        if (isSeries) {
-          const ep = currentEpisode || detectEpisode(text) || "";
-          label = ep ? `${ep} • ${qual}${sizeStr}` : `${qual}${sizeStr}`;
-        } else {
-          label = `${qual}${sizeStr}`;
-        }
+        const ep = isSeries ? (currentEpisode || detectEpisode(text) || "") : "";
+        const label = formatButtonLabel(ep, qual, currentSize);
 
         groups.push({
           label: label.trim(),
           quality: qual,
-          episode: currentEpisode,
+          episode: ep,
           size: currentSize,
           isPack: /pack|batch|zip/i.test(label),
           url: href,
@@ -96,7 +113,7 @@ export async function scrapePost(postUrl) {
     // Context tracking for headings & paragraphs
     if (/(?:^|\s)(?:ep|episode|e)\s*\d+/i.test(text) || /ep\s*\d+\s*to\s*\d+/i.test(text) || /zip\s*pack|full\s*season/i.test(text)) {
       const epMatch = text.match(/(?:ep|episode|e)\s*\d+(?:\s*to\s*\d+)?/i) || text.match(/zip\s*pack|full\s*season/i);
-      if (epMatch) currentEpisode = epMatch[0].toUpperCase();
+      if (epMatch) currentEpisode = epMatch[0].toUpperCase().replace(/\s*TO\s*/i, "-");
     }
 
     const q = detectQuality(text);
@@ -116,20 +133,30 @@ export async function scrapePost(postUrl) {
   };
 }
 
+function formatButtonLabel(episode, quality, size) {
+  let ep = episode ? episode.replace(/\s*TO\s*/i, "-").replace(/^EPISODE\s*/i, "EP ").replace(/^EP\s*0?(\d+)/i, "EP $1") : "";
+  let qual = quality || "Download";
+  let sz = size ? ` (${size.replace(/\s+/g, "")})` : "";
+  if (ep) {
+    return `${ep} • ${qual}${sz}`;
+  }
+  return `${qual}${sz}`;
+}
+
 function detectQuality(str) {
   if (!str) return "";
   if (/2160p|4k/i.test(str)) return "4K 2160p";
   if (/1080p\s*hq/i.test(str)) return "1080p HQ";
   if (/1080p\s*hevc/i.test(str)) return "1080p HEVC";
-  if (/1080p/i.test(str)) return "1080p FHD";
+  if (/1080p/i.test(str)) return "1080p";
   if (/720p\s*hevc/i.test(str)) return "720p HEVC";
-  if (/720p/i.test(str)) return "720p HD";
-  if (/480p/i.test(str)) return "480p SD";
+  if (/720p/i.test(str)) return "720p";
+  if (/480p/i.test(str)) return "480p";
   return "";
 }
 
 function detectEpisode(str) {
   if (!str) return "";
   const m = str.match(/(?:ep|episode|e)\s*(\d{1,3})/i);
-  return m ? `EP ${m[1].padStart(2, "0")}` : "";
+  return m ? `EP ${m[1]}` : "";
 }

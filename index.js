@@ -2,7 +2,7 @@ import http from "node:http";
 import { Bot, InlineKeyboard } from "grammy";
 import { config } from "./config.js";
 import { PostTracker } from "./tracker.js";
-import { scrapePost } from "./scraper.js";
+import { scrapePost, parseTitle } from "./scraper.js";
 import { resolveBypass } from "./resolver.js";
 
 if (!config.botToken) {
@@ -21,34 +21,42 @@ export function escapeHtml(text) {
 }
 
 export async function formatPostMessage(postData, autoResolve = true) {
+  const { displayTitle, season } = parseTitle(postData.title);
+
   const lines = [];
-  lines.push(`🎬 <b>${escapeHtml(postData.title)}</b>\n`);
+  lines.push(`🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`);
+  lines.push(`━━━━━━━━━━━━━━━━━━━━`);
 
   const metaItems = [];
+  if (postData.isSeries || season) {
+    metaItems.push(`📌 <b>Type:</b> Series ${season ? `(${escapeHtml(season)})` : ""}`.trim());
+  } else {
+    metaItems.push(`📌 <b>Type:</b> Movie`);
+  }
+
   if (postData.meta?.imdb) metaItems.push(`⭐ <b>IMDb:</b> ${escapeHtml(postData.meta.imdb)}`);
   if (postData.meta?.audio) metaItems.push(`🔊 <b>Audio:</b> ${escapeHtml(postData.meta.audio)}`);
   if (postData.meta?.genre) metaItems.push(`🎭 <b>Genre:</b> ${escapeHtml(postData.meta.genre)}`);
 
-  if (metaItems.length > 0) {
-    lines.push(metaItems.join(" | ") + "\n");
-  }
+  lines.push(metaItems.join("\n"));
 
   if (postData.meta?.plot) {
-    const plot = postData.meta.plot.length > 200 ? postData.meta.plot.slice(0, 197) + "…" : postData.meta.plot;
-    lines.push(`📖 <i>${escapeHtml(plot)}</i>\n`);
+    const plot = postData.meta.plot.length > 180 ? postData.meta.plot.slice(0, 177) + "…" : postData.meta.plot;
+    lines.push(`\n📖 <b>Storyline:</b>\n<i>${escapeHtml(plot)}</i>`);
   }
 
-  lines.push(`⚡ <b>${postData.isSeries ? "Direct Episodes & Downloads" : "Direct Download Qualities"}:</b>`);
+  lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+  lines.push(`⚡ <b>${postData.isSeries ? "Direct Episode Downloads" : "Select Download Quality"}:</b>`);
 
   // Parallel bypass resolution
   const resolvedGroups = await Promise.all(
     postData.groups.map(async (item) => {
-      if (!autoResolve) return { ...item, directUrl: item.url, label: `🔗 ${item.label}` };
+      if (!autoResolve) return { ...item, directUrl: item.url, label: item.label };
       try {
         const direct = await resolveBypass(item.url);
-        return { ...item, directUrl: direct || item.url, label: `⚡ ${item.label}` };
+        return { ...item, directUrl: direct || item.url, label: item.label };
       } catch {
-        return { ...item, directUrl: item.url, label: `🔗 ${item.label}` };
+        return { ...item, directUrl: item.url, label: item.label };
       }
     })
   );
@@ -65,7 +73,7 @@ export async function formatPostMessage(postData, autoResolve = true) {
   }
 
   if (btnCount % 2 !== 0) keyboard.row();
-  keyboard.url("🌐 View on Website", postData.url);
+  keyboard.row().url("🌐 View on Website", postData.url);
 
   return { text: lines.join("\n"), keyboard, poster: postData.poster };
 }
