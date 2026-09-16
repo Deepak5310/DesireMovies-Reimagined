@@ -253,11 +253,46 @@ if (process.argv[1]?.endsWith("index.js")) {
       console.log(`🌐 Health-check server listening on port ${PORT}`);
     });
 
-  bot.catch((err) => console.error("[Bot Error]", err));
-  bot.start({
-    onStart: () => {
-      console.log("🚀 Telegram Bot is running!");
-      startTrackerLoop();
-    },
+  bot.catch((err) => console.error("[Bot Middleware Error]", err));
+
+  let trackerStarted = false;
+  async function startBotWithRetry() {
+    while (true) {
+      try {
+        await bot.start({
+          drop_pending_updates: true,
+          onStart: () => {
+            console.log("🚀 Telegram Bot is running!");
+            if (!trackerStarted) {
+              trackerStarted = true;
+              startTrackerLoop();
+            }
+          },
+        });
+        break;
+      } catch (err) {
+        if (err.description?.includes("Conflict") || err.error_code === 409) {
+          console.warn("⚠️ Bot instance conflict (409). Old instance shutting down, retrying in 4s…");
+          await new Promise((r) => setTimeout(r, 4000));
+        } else {
+          console.error("❌ Polling error, retrying in 5s:", err.message || err);
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      }
+    }
+  }
+
+  process.once("SIGINT", () => {
+    console.log("Shutting down bot (SIGINT)...");
+    bot.stop();
+    process.exit(0);
   });
+
+  process.once("SIGTERM", () => {
+    console.log("Shutting down bot (SIGTERM)...");
+    bot.stop();
+    process.exit(0);
+  });
+
+  startBotWithRetry();
 }
