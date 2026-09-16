@@ -1,120 +1,106 @@
-# DesireMovies Bypass
+# DesireMovies Bypass & Stream — Chrome Extension (Manifest V3)
 
-A pure-headless Chrome MV3 extension that automates multi-hop download bypasses on DesireMovies. It resolves the entire download chain invisibly in the background — **zero tabs opened, download starts directly**.
+A high-performance Chrome Extension built with modern **Manifest V3** standards. Automates multi-hop download bypasses across redirect chains, cleans download filenames, and provides an in-page streaming video player with resume functionality, audio codec troubleshooting, and VLC/MPV integration.
 
 ---
 
-## How It Works
+## 🚀 Key Features
 
-When you click a download link on DesireMovies, several redirect pages normally require manual interaction. This extension resolves everything invisibly:
+- **Automated Multi-Hop Bypass:** Directly resolves final direct stream/download URLs across Gyanigurus, KMHD, GDFlix, GoFlix, HubCloud, HubDrive, Gamerxyt, and Sportverse chains with zero tabs opened.
+- **In-Page Video Player:** Stream movies and episodes directly in-browser with custom controls, time-remaining toggle, picture-in-picture, and radial HUD progress feedback.
+- **Playback Resume System:** Remembers video playback position for up to 7 days with a 10-second auto-dismiss resume prompt.
+- **Dolby / DTS Audio Troubleshooting:** Informs users when browser audio codecs (e.g. EAC3 / DTS) are unsupported, offering one-click MPV command copying and direct download options.
+- **Batch Episode Pack Downloader:** Resolves and queues all episodes in a TV show pack with a controlled worker concurrency pool.
+- **Smart Filename Sanitizer:** Strips site branding, release tags (`10bit`, `HEVC`, `x264`, `x265`, `Dual-Audio`), normalizes Season & Episode numbers (`S01 EP01`), and preserves audio channel descriptors (`5.1`, `7.1`).
 
-### The Headless Path (~2-3 seconds)
+---
+
+## 🏗️ Architecture & MV3 Optimization
+
+The extension follows Manifest V3 event-driven architectural principles:
 
 ```
-Click download link on DesireMovies
-  └─ content.js intercepts the click and messages the Service Worker
-       └─ background.js resolves the ENTIRE chain headlessly:
-            1. GET Gyanigurus page → extract GDFlix URL
-            2. GET GDFlix page → extract "Instant DL" (BusyCDN) URL
-            3. fetch(BusyCDN) → read redirect location → parse ?url= param
-            4. chrome.downloads.download(finalUrl) → ✅ Download starts directly
+┌─────────────────────────────────────────────────────────────┐
+│                       manifest.json                         │
+│   Declarative content script & stylesheet registration      │
+└──────────────┬───────────────────────────────┬──────────────┘
+               │                               │
+               ▼                               ▼
+┌─────────────────────────────┐ ┌─────────────────────────────┐
+│   content.js + player.css   │ │   background.js (Worker)    │
+│  - DOM Link Observers       │ │  - Ephemeral Service Worker │
+│  - In-Page Video Overlay    │ │  - Multi-Hop URL Resolvers  │
+│  - Throttled Storage Sync   │ │  - In-Flight Request Dedup  │
+│  - Radial HUD & Scrubber    │ │  - Filename Sanitizer Hook  │
+└──────────────┬──────────────┘ └──────────────┬──────────────┘
+               │                               │
+               └────── Chrome Runtime IPC ─────┘
 ```
 
-No tabs open. No visible redirects. The download just starts magically. 
-
-### Fallback
-
-If the headless chain fails (e.g., a Cloudflare challenge or a major page structure change), the extension will log an error, show a `❌ Failed` status next to the link, and simply open the original link in a new tab so you can complete the download manually.
-
----
-
-## Features
-
-- **Zero-tab download**: Entire chain resolved headlessly — download starts directly via `chrome.downloads`.
-- **Online Watch**: Seamless in-page Netflix-style video player with smooth 10s seeking, interactive scrubber, buffer indicator, animated HUD, PiP, volume controls, and external stream link copying.
-- **Lightning Fast**: Sequential fetches take ~2-3s total compared to opening/closing multiple tabs.
-- **Smart Filename Cleaning**: Strips site branding, preserves important quality/codec tags (like 1080p, WEB-DL, HEVC), and standardizes episode formats on every download.
-- **Bypass Cache**: Caches resolved download URLs per session so clicking the same link twice instantly downloads the file.
-- **Invisible Execution**: No popup UI, no options page, no bloat.
+### Optimizations Implemented:
+1. **Zero-Overhead Declarative Injection:** Replaced manual `chrome.scripting` injection and `tabs.onUpdated` polling with native declarative `content_scripts` in `manifest.json`. This eliminates unnecessary background service worker wakeups on unrelated tab navigations across the browser.
+2. **In-Flight Request Deduplication:** The Service Worker prevents redundant network fetches by mapping active Promises in an in-memory queue.
+3. **Ephemeral Cache Hydration:** Uses `chrome.storage.session` to persist bypass tokens across Service Worker restarts with a 3-hour TTL.
+4. **Layout Thrashing & Memory Cleanup:** Replaced programmatic inline styles in `content.js` with structured, hardware-accelerated CSS classes in `player.css`. Teardown routines safely release video decoding memory and remove window event listeners.
+5. **Throttled Storage I/O:** Debounces playback timestamp writes to stay well within Chrome extension storage write quotas (`MAX_WRITE_OPERATIONS_PER_HOUR`).
 
 ---
 
-## Installation
+## 📂 Project Structure
 
-> Not on the Chrome Web Store. Load as unpacked.
-
-```bash
-git clone https://github.com/Deepak5310/DesireMovies-Reimagined.git
+```
+├── manifest.json       # Manifest V3 configuration & declarative rules
+├── background.js       # Event-driven Service Worker (resolvers, deduplication, downloads)
+├── content.js          # In-page UI, video overlay, and link interception
+├── player.css          # Modular styles for player, radial HUD, and modals
+├── icons/              # Extension icons (16px, 32px, 48px, 128px)
+└── README.md           # Architecture documentation & setup instructions
 ```
 
-1. Open `chrome://extensions`
-2. Enable **Developer Mode** (top-right toggle)
-3. Click **Load unpacked** and select the cloned directory
-4. Visit a DesireMovies page and click any download link
-
 ---
 
-## Usage
+## 🔒 Permissions Breakdown
 
-No configuration required. Once loaded:
-
-- **DesireMovies / KatMovieHD / KMHD** — Click any download link to start a zero-tab headless download, or click `▶ Watch Online` to stream directly in the in-page video player.
-- **Player Shortcuts** — Space/K: Play/Pause, Left/Right/J/L: 10s Seek, Up/Down/Scroll: Volume, F: Fullscreen, P: Picture-in-Picture, Esc: Close.
-- **Downloads** — All filenames are automatically cleaned.
-
-### Filename Examples
-
-| Raw | Cleaned |
+| Permission | Purpose |
 |---|---|
-| `EP.1.5.Movie.Name.S01.WEBDl.10bit.Desiremovies.mkv` | `Movie Name S01 EP01-05 WEB-DL.mkv` |
-| `Movie.Name.2024.1080p.hq.desiremovies.in.mkv` | `Movie Name 2024 1080p.mkv` |
-| `Show.S02.EP03.Hindi.5.1.WEBDl.mkv` | `Show S02 EP03 Hindi 5.1 WEB-DL.mkv` |
+| `downloads` | Required to trigger background file downloads and invoke `onDeterminingFilename` to clean movie filenames. |
+| `storage` | Required for ephemeral session caching (`chrome.storage.session`) and 7-day video playback position storage (`chrome.storage.local`). |
+| `host_permissions` (`<all_urls>`) | Required to perform `fetch()` requests against dynamic, multi-hop redirect and mirror domains (Cloudflare Workers, GDFlix, HubCloud, KMHD, etc.). |
+
+*Note: The `scripting` permission was removed as script and style injection are now handled declaratively by the browser.*
 
 ---
 
-## Project Structure
+## ⌨️ Player Keyboard Shortcuts
 
-```
-DesireMovies-Reimagined/
-├── manifest.json     — MV3 manifest with global host permissions and scripting capabilities
-├── background.js     — Service worker: dynamic script injection, headless bypass, and filename cleaning
-├── content.js        — Content script: intercepts clicks on Gyanigurus redirect links
-└── icons/            — Extension icons
-```
-
----
-
-## Automated Domain & TLD Handling
-
-Target sites often change their TLDs (e.g., from `.dad` to `.mom`, `.xyz` to `.live`, or `.io` to `.dev`) to bypass restrictions. This extension is designed to **automatically adapt** to these changes without requiring any code modifications:
-
-1. **DesireMovies Domain Changes:** The extension service worker listens to page loads and dynamically injects the content script into any hostname containing `"desiremovies"`.
-2. **Redirect Link Interception:** The content script detects and intercepts links whose hostname contains `"gyanigurus"`, regardless of the TLD.
-3. **Bypass Chain Matching:** The background script matches redirect and download paths using wildcard-TLD regular expressions (e.g., matching any TLD for `busycdn.[a-z0-9.]+`).
-
-No manual domain updates are necessary.
-
----
-
-## Security & Permissions
-
-| Permission | Reason |
+| Shortcut | Action |
 |---|---|
-| `downloads` | Used to trigger the final download and clean filenames (`onDeterminingFilename`). |
-| `storage` | Used to persist the bypass cache across service-worker restarts (`chrome.storage.session`). |
-| `scripting` | Allows dynamic injection of content scripts onto DesireMovies domains. |
-| `host_permissions` | Contains `"<all_urls>"` to allow headless fetch requests to the dynamically changing intermediate and final bypass endpoints. |
-
-- Headless fetch targets are verified using fast pattern matching.
-- Content scripts inject only on pages whose hostnames match the `"desiremovies"` pattern.
-- Zero analytics, zero tracking, no data sent to external servers.
+| <kbd>Space</kbd> / <kbd>K</kbd> | Play / Pause |
+| <kbd>←</kbd> / <kbd>→</kbd> or <kbd>J</kbd> / <kbd>L</kbd> | Seek backward / forward 10 seconds |
+| <kbd>↑</kbd> / <kbd>↓</kbd> or <kbd>Scroll Wheel</kbd> | Volume up / down 5% |
+| <kbd>M</kbd> | Toggle Mute |
+| <kbd>F</kbd> / <kbd>Double-Click</kbd> | Toggle Fullscreen |
+| <kbd>P</kbd> | Picture-in-Picture |
+| <kbd>0</kbd> – <kbd>9</kbd> | Jump to 0% – 90% of duration |
+| <kbd>?</kbd> | Open Keyboard Shortcuts Guide |
+| <kbd>Esc</kbd> | Close Modal / Exit Fullscreen / Close Player |
 
 ---
 
-## Developer
+## 🛠️ Installation & Setup
+
+1. Clone or download this repository.
+2. Open Google Chrome and navigate to `chrome://extensions/`.
+3. Enable **Developer mode** in the top right corner.
+4. Click **Load unpacked** and select the extension root directory (`DesireMovies`).
+5. Open any supported page to use the in-page stream player or automated multi-hop bypass download.
+
+---
+
+## 👤 Developer
 
 **Deepak Jangid** — [Deepak5310](https://github.com/Deepak5310)
 
-## License
+## 📄 License
 
 For educational and personal use only.

@@ -1,147 +1,104 @@
 (function () {
   "use strict";
-  if (window.__desiremoviesBypassInjected) return;
-  window.__desiremoviesBypassInjected = true;
 
-  const WATCH_BTN_ATTR = "data-desiremovies-watch";
-  const BYPASS_LINK_RE = /^https?:\/\/[^/]*(gyanigurus|kmhd|moviesbaba|gdflix|goflix|katdrama|hubcloud|hubdrive)/i;
+  if (window.__desiremoviesInjected) return;
+  window.__desiremoviesInjected = true;
+
+  const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katdrama|hubcloud|hubdrive)/i;
+  const CACHE_KEY = "dm_playback_cache";
+  const TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const activeAnchors = new Map();
 
   function sendBg(action, payload = {}) {
-    return new Promise((resolve, reject) => {
-      try {
-        chrome.runtime.sendMessage({ action, payload }, (res) => {
-          chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve(res);
-        });
-      } catch (e) {
-        reject(e);
-      }
+    return new Promise((res, rej) => {
+      chrome.runtime.sendMessage({ action, payload }, (r) => {
+        chrome.runtime.lastError ? rej(new Error(chrome.runtime.lastError.message)) : res(r);
+      });
     });
   }
 
-  function formatTime(sec) {
+  function fmtTime(sec) {
     if (!Number.isFinite(sec) || sec < 0) return "0:00";
-    const total = Math.floor(sec);
-    const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = String(total % 60).padStart(2, "0");
+    const t = Math.floor(sec), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = String(t % 60).padStart(2, "0");
     return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
   }
 
-  const PLAYBACK_CACHE_KEY = "dm_playback_cache";
-  const PLAYBACK_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
-  function getPlaybackKey(bypassUrl, streamUrl, titleText) {
-    try {
-      if (bypassUrl) {
-        const u = new URL(bypassUrl, window.location.href);
-        return u.origin + u.pathname;
-      }
-    } catch {}
-    try {
-      if (streamUrl) {
-        const u = new URL(streamUrl, window.location.href);
-        return u.pathname.split("/").pop() || u.pathname;
-      }
-    } catch {}
-    return titleText ? titleText.trim().toLowerCase() : null;
+  function getPlaybackKey(bypassUrl, streamUrl, title) {
+    try { if (bypassUrl) return new URL(bypassUrl, location.href).pathname; } catch {}
+    try { if (streamUrl) return new URL(streamUrl, location.href).pathname.split("/").pop(); } catch {}
+    return title ? title.trim().toLowerCase() : null;
   }
 
-  function cleanPlaybackCache(cache = {}) {
-    const now = Date.now();
-    const clean = {};
-    for (const [k, v] of Object.entries(cache || {})) {
-      if (v?.time && typeof v.time === "number" && now - (v.updatedAt || 0) < PLAYBACK_TTL_MS) {
-        clean[k] = v;
-      }
-    }
-    return clean;
-  }
+  let memoryStore = null;
+  let flushTimer = null;
 
-  function updatePlaybackStore(updater) {
-    try {
-      const local = updater(cleanPlaybackCache(JSON.parse(localStorage.getItem(PLAYBACK_CACHE_KEY) || "{}")));
-      localStorage.setItem(PLAYBACK_CACHE_KEY, JSON.stringify(local));
-    } catch {}
-
-    if (chrome?.storage?.local) {
-      chrome.storage.local.get([PLAYBACK_CACHE_KEY], (res) => {
-        const updated = updater(cleanPlaybackCache(res?.[PLAYBACK_CACHE_KEY]));
-        chrome.storage.local.set({ [PLAYBACK_CACHE_KEY]: updated }).catch(() => {});
-      });
-    }
-  }
-
-  function getSavedPlayback(key) {
+  function loadStore() {
+    if (memoryStore) return Promise.resolve(memoryStore);
     return new Promise((resolve) => {
-      if (!key) return resolve(null);
-      const readLocal = () => {
-        try {
-          const cache = cleanPlaybackCache(JSON.parse(localStorage.getItem(PLAYBACK_CACHE_KEY) || "{}"));
-          return cache[key]?.time || null;
-        } catch {
-          return null;
+      const finish = (data) => {
+        const now = Date.now(), clean = {};
+        for (const [k, v] of Object.entries(data || {})) {
+          if (v?.time && now - (v.updatedAt || 0) < TTL_MS) clean[k] = v;
         }
+        memoryStore = clean;
+        resolve(memoryStore);
       };
-      if (chrome?.storage?.local) {
-        chrome.storage.local.get([PLAYBACK_CACHE_KEY], (res) => {
-          const cache = cleanPlaybackCache(res?.[PLAYBACK_CACHE_KEY]);
-          resolve(cache[key]?.time || readLocal());
-        });
-      } else {
-        resolve(readLocal());
+      if (chrome?.storage?.local) chrome.storage.local.get([CACHE_KEY], (res) => finish(res?.[CACHE_KEY]));
+      else {
+        try { finish(JSON.parse(localStorage.getItem(CACHE_KEY) || "{}")); } catch { finish({}); }
       }
     });
   }
 
-  function savePlayback(key, time, duration) {
+  function saveStore() {
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(() => {
+      if (!memoryStore) return;
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(memoryStore)); } catch {}
+      if (chrome?.storage?.local) chrome.storage.local.set({ [CACHE_KEY]: memoryStore }).catch(() => {});
+    }, 1500);
+  }
+
+  async function getSavedPos(key) {
+    return key ? (await loadStore())[key]?.time || null : null;
+  }
+
+  async function updateSavedPos(key, time, duration) {
     if (!key || !Number.isFinite(time) || time < 5) return;
-    updatePlaybackStore((cache) => {
-      if (duration && time >= duration - 15) {
-        delete cache[key];
-      } else {
-        cache[key] = { time: Math.round(time), duration: Math.round(duration || 0), updatedAt: Date.now() };
-      }
-      return cache;
-    });
+    const store = await loadStore();
+    if (duration && time >= duration - 15) delete store[key];
+    else store[key] = { time: Math.round(time), duration: Math.round(duration || 0), updatedAt: Date.now() };
+    saveStore();
   }
 
-  function clearPlayback(key) {
+  async function clearSavedPos(key) {
     if (!key) return;
-    updatePlaybackStore((cache) => {
-      delete cache[key];
-      return cache;
-    });
+    const store = await loadStore();
+    delete store[key];
+    saveStore();
   }
 
-  function findAnchorForUrl(url) {
-    return activeAnchors.get(url) || document.querySelector(`a[href="${CSS.escape(url)}"]`);
-  }
-
+  // Progress message handler from background
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action !== "bypass_progress") return;
     const { url, statusText } = msg;
-
     const packBtn = document.getElementById("btn-dl-all-episodes");
-    if (packBtn?.disabled && (/\/pack\//i.test(url) || url === window.location.href)) {
-      packBtn.innerHTML = statusText;
-    }
+    if (packBtn?.disabled && (/\/pack\//i.test(url) || url === location.href)) packBtn.innerHTML = statusText;
 
-    const anchor = findAnchorForUrl(url);
-    if (anchor?.dataset.bypassing) {
-      anchor.innerHTML = `<span style="opacity:0.9">${statusText}</span>`;
-    }
+    const anchor = activeAnchors.get(url) || document.querySelector(`a[href="${CSS.escape(url)}"]`);
+    if (anchor?.dataset.bypassing) anchor.innerHTML = `<span style="opacity:0.9">${statusText}</span>`;
   });
 
   function showStatus(anchor, text, url) {
-    const saved = { html: anchor.innerHTML, pointerEvents: anchor.style.pointerEvents, cursor: anchor.style.cursor };
+    const savedHtml = anchor.innerHTML;
     anchor.innerHTML = `<span style="opacity:0.8">${text}</span>`;
     anchor.style.pointerEvents = "none";
-    anchor.style.cursor = "wait";
     anchor.dataset.bypassing = "true";
     if (url) activeAnchors.set(url, anchor);
+
     return () => {
-      anchor.innerHTML = saved.html;
-      anchor.style.pointerEvents = saved.pointerEvents;
-      anchor.style.cursor = saved.cursor;
+      anchor.innerHTML = savedHtml;
+      anchor.style.pointerEvents = "";
       delete anchor.dataset.bypassing;
       if (url) activeAnchors.delete(url);
     };
@@ -150,782 +107,368 @@
   const ICONS = {
     play: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`,
     pause: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`,
-    replay10: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8zm-1.1 11h-.8v-3.3l-.9.3v-.6l1.4-.5h.3v4.1zm3.8-2.1c0 .8-.1 1.4-.4 1.7-.3.3-.7.5-1.2.5s-.9-.2-1.2-.5c-.3-.3-.4-.9-.4-1.7v-.9c0-.8.1-1.4.4-1.7.3-.3.7-.5 1.2-.5s.9.2 1.2.5c.3.3.4.9.4 1.7v.9zm-.8-.9c0-.5 0-.9-.1-1.1-.1-.3-.3-.4-.6-.4s-.5.1-.6.4c-.1.2-.1.6-.1 1.1v.9c0 .5 0 .9.1 1.1.1.3.3.4.6.4s.5-.1.6-.4c.1-.2.1-.6.1-1.1v-.9z"/></svg>`,
-    forward10: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8zm-1.1 11h-.8v-3.3l-.9.3v-.6l1.4-.5h.3v4.1zm3.8-2.1c0 .8-.1 1.4-.4 1.7-.3.3-.7.5-1.2.5s-.9-.2-1.2-.5c-.3-.3-.4-.9-.4-1.7v-.9c0-.8.1-1.4.4-1.7.3-.3.7-.5 1.2-.5s.9.2 1.2.5c.3.3.4.9.4 1.7v.9zm-.8-.9c0-.5 0-.9-.1-1.1-.1-.3-.3-.4-.6-.4s-.5.1-.6.4c-.1.2-.1.6-.1 1.1v.9c0 .5 0 .9.1 1.1.1.3.3.4.6.4s.5-.1.6-.4c.1-.2.1-.6.1-1.1v-.9z"/></svg>`,
-    volumeHigh: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`,
-    volumeLow: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>`,
-    volumeMute: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`,
+    rewind: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8zm-1.1 11h-.8v-3.3l-.9.3v-.6l1.4-.5h.3v4.1zm3.8-2.1c0 .8-.1 1.4-.4 1.7-.3.3-.7.5-1.2.5s-.9-.2-1.2-.5c-.3-.3-.4-.9-.4-1.7v-.9c0-.8.1-1.4.4-1.7.3-.3.7-.5 1.2-.5s.9.2 1.2.5c.3.3.4.9.4 1.7v.9zm-.8-.9c0-.5 0-.9-.1-1.1-.1-.3-.3-.4-.6-.4s-.5.1-.6.4c-.1.2-.1.6-.1 1.1v.9c0 .5 0 .9.1 1.1.1.3.3.4.6.4s.5-.1.6-.4c.1-.2.1-.6.1-1.1v-.9z"/></svg>`,
+    forward: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8zm-1.1 11h-.8v-3.3l-.9.3v-.6l1.4-.5h.3v4.1zm3.8-2.1c0 .8-.1 1.4-.4 1.7-.3.3-.7.5-1.2.5s-.9-.2-1.2-.5c-.3-.3-.4-.9-.4-1.7v-.9c0-.8.1-1.4.4-1.7.3-.3.7-.5 1.2-.5s.9.2 1.2.5c.3.3.4.9.4 1.7v.9zm-.8-.9c0-.5 0-.9-.1-1.1-.1-.3-.3-.4-.6-.4s-.5.1-.6.4c-.1.2-.1.6-.1 1.1v.9c0 .5 0 .9.1 1.1.1.3.3.4.6.4s.5-.1.6-.4c.1-.2.1-.6.1-1.1v-.9z"/></svg>`,
+    volHigh: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`,
+    volLow: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>`,
+    volMute: `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`,
+    fs: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`,
+    fsExit: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`,
     pip: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 1.98 2 1.98h18c1.1 0 2-.88 2-1.98V5c0-1.1-.9-2-2-2zm0 16.01H3V4.98h18v14.03z"/></svg>`,
-    fullscreen: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`,
-    fullscreenExit: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`,
-    close: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`,
-    download: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>`,
     copy: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`,
-    keyboard: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 4H5v-2h2v2zm0-3H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 7h-2v-2h2v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>`
+    dl: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>`,
+    close: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`,
+    kb: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 4H5v-2h2v2zm0-3H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 7h-2v-2h2v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>`
   };
 
-  function openPlayer(streamUrl, bypassUrl, titleText, openerBtn) {
-    const existing = document.getElementById("desiremovies-watch-overlay");
-    if (existing) existing.remove();
+  function flash(btn, text, delay = 2000, fallback = btn.innerHTML) {
+    btn.innerHTML = text;
+    setTimeout(() => { btn.innerHTML = fallback; }, delay);
+  }
 
+  function copyText(btn, str, successLabel = "✓ Copied!") {
+    navigator.clipboard.writeText(str)
+      .then(() => flash(btn, successLabel))
+      .catch(() => flash(btn, "❌ Failed"));
+  }
+
+  function openPlayer(streamUrl, bypassUrl, titleText, openerBtn) {
+    document.getElementById("desiremovies-watch-overlay")?.remove();
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-
-    if (!document.getElementById("dm-player-injected-styles")) {
-      const link = document.createElement("link");
-      link.id = "dm-player-injected-styles";
-      link.rel = "stylesheet";
-      link.href = chrome?.runtime?.getURL ? chrome.runtime.getURL("player.css") : "player.css";
-      document.head.appendChild(link);
-    }
-
 
     const overlay = document.createElement("div");
     overlay.id = "desiremovies-watch-overlay";
     overlay.className = "dm-overlay-root";
     overlay.tabIndex = -1;
 
-    const container = document.createElement("div");
-    container.className = "dm-player-container";
-    container.tabIndex = -1;
+    overlay.innerHTML = `
+      <div class="dm-player-container" tabindex="-1">
+        <div class="dm-video-stage">
+          <video class="dm-video-el" src="${streamUrl}" playsinline preload="auto"></video>
+          <div class="dm-center-pulse"></div>
+          <div class="dm-hud-popup">
+            <svg class="dm-hud-ring-svg" viewBox="0 0 82 82">
+              <circle class="dm-hud-ring-bg" cx="41" cy="41" r="36"></circle>
+              <circle class="dm-hud-ring-bar" cx="41" cy="41" r="36"></circle>
+            </svg>
+            <div class="dm-hud-content"><span class="dm-hud-icon"></span><span class="dm-hud-text"></span></div>
+          </div>
+          <div class="dm-buffering-spinner"></div>
 
-    const stage = document.createElement("div");
-    stage.className = "dm-video-stage";
+          <div class="dm-floating-top">
+            <div class="dm-title-box">
+              <span class="dm-badge">DESIREMOVIES • WATCH ONLINE</span>
+              <span class="dm-title-text">${titleText || "Video Stream"}</span>
+            </div>
+            <div class="dm-top-actions">
+              <button class="dm-btn-action" id="dm-btn-sound">🔊 No Sound?</button>
+              <button class="dm-btn-action" id="dm-btn-copy">${ICONS.copy} Copy Link</button>
+              <button class="dm-btn-action" id="dm-btn-dl">${ICONS.dl} Download</button>
+              <button class="dm-btn-action dm-btn-close" id="dm-btn-close">${ICONS.close}</button>
+            </div>
+          </div>
 
-    const video = document.createElement("video");
-    video.className = "dm-video-el";
-    video.src = streamUrl;
-    video.playsInline = true;
-    video.preload = "auto";
-    video.controls = false;
+          <div class="dm-floating-bottom">
+            <div class="dm-progress-track">
+              <div class="dm-buffer-bar"></div>
+              <div class="dm-played-bar"><div class="dm-scrubber-thumb"></div></div>
+              <div class="dm-time-tooltip"></div>
+            </div>
+            <div class="dm-controls-row">
+              <div class="dm-controls-left">
+                <button class="dm-ctrl-btn" id="dm-play">${ICONS.play}</button>
+                <button class="dm-ctrl-btn" id="dm-rw">${ICONS.rewind}</button>
+                <button class="dm-ctrl-btn" id="dm-ff">${ICONS.forward}</button>
+                <div class="dm-volume-box">
+                  <button class="dm-ctrl-btn" id="dm-vol-btn">${ICONS.volHigh}</button>
+                  <div class="dm-vol-slider"><div class="dm-vol-fill"></div></div>
+                </div>
+                <span class="dm-time-display">0:00 / 0:00</span>
+              </div>
+              <div class="dm-controls-right">
+                <button class="dm-speed-pill" id="dm-speed">1x</button>
+                <button class="dm-ctrl-btn" id="dm-pip">${ICONS.pip}</button>
+                <button class="dm-ctrl-btn" id="dm-fs">${ICONS.fs}</button>
+                <button class="dm-ctrl-btn" id="dm-help">${ICONS.kb}</button>
+              </div>
+            </div>
+          </div>
 
-    let prevVolume = 0.4;
-    try {
-      const v = parseFloat(localStorage.getItem("dm_player_volume"));
-      if (Number.isFinite(v) && v > 0) prevVolume = Math.min(1, v);
-      video.muted = localStorage.getItem("dm_player_muted") === "true";
-    } catch {}
-    video.volume = prevVolume;
-    stage.appendChild(video);
-
-    const centerPulse = document.createElement("div");
-    centerPulse.className = "dm-center-pulse";
-    stage.appendChild(centerPulse);
-
-    function triggerPulse(svgHtml) {
-      centerPulse.innerHTML = svgHtml;
-      centerPulse.classList.remove("show");
-      void centerPulse.offsetWidth;
-      centerPulse.classList.add("show");
-    }
-    centerPulse.addEventListener("animationend", () => centerPulse.classList.remove("show"));
-
-    const HUD_RING_CIRCUMFERENCE = 226.2;
-    const hud = document.createElement("div");
-    hud.className = "dm-hud-popup";
-    hud.innerHTML = `
-      <svg class="dm-hud-ring-svg" viewBox="0 0 82 82">
-        <circle class="dm-hud-ring-bg" cx="41" cy="41" r="36"></circle>
-        <circle class="dm-hud-ring-bar" cx="41" cy="41" r="36"></circle>
-      </svg>
-      <div class="dm-hud-content">
-        <span class="dm-hud-icon"></span>
-        <span class="dm-hud-text"></span>
+          <div class="dm-modal-backdrop" id="dm-modal">
+            <div class="dm-modal-card">
+              <div class="dm-modal-title" id="dm-modal-title"></div>
+              <div class="dm-modal-desc" id="dm-modal-desc"></div>
+              <div class="dm-modal-actions" id="dm-modal-actions"></div>
+            </div>
+          </div>
+        </div>
       </div>
     `;
-    stage.appendChild(hud);
 
-    const hudRingBar = hud.querySelector(".dm-hud-ring-bar");
-    const hudIcon = hud.querySelector(".dm-hud-icon");
-    const hudText = hud.querySelector(".dm-hud-text");
+    document.documentElement.appendChild(overlay);
+
+    const stage = overlay.querySelector(".dm-video-stage");
+    const container = overlay.querySelector(".dm-player-container");
+    const video = overlay.querySelector(".dm-video-el");
+    const playBtn = overlay.querySelector("#dm-play");
+    const topBar = overlay.querySelector(".dm-floating-top");
+    const bottomBar = overlay.querySelector(".dm-floating-bottom");
+    const track = overlay.querySelector(".dm-progress-track");
+    const playedBar = overlay.querySelector(".dm-played-bar");
+    const bufferBar = overlay.querySelector(".dm-buffer-bar");
+    const tooltip = overlay.querySelector(".dm-time-tooltip");
+    const timeDisplay = overlay.querySelector(".dm-time-display");
+    const volBtn = overlay.querySelector("#dm-vol-btn");
+    const volSlider = overlay.querySelector(".dm-vol-slider");
+    const volFill = overlay.querySelector(".dm-vol-fill");
+    const speedBtn = overlay.querySelector("#dm-speed");
+    const fsBtn = overlay.querySelector("#dm-fs");
+    const pipBtn = overlay.querySelector("#dm-pip");
+    const pulse = overlay.querySelector(".dm-center-pulse");
+    const spinner = overlay.querySelector(".dm-buffering-spinner");
+    const hud = overlay.querySelector(".dm-hud-popup");
+    const hudRing = overlay.querySelector(".dm-hud-ring-bar");
+    const hudIcon = overlay.querySelector(".dm-hud-icon");
+    const hudText = overlay.querySelector(".dm-hud-text");
+    const modal = overlay.querySelector("#dm-modal");
+
+    // Modal Helper
+    function showDialog(title, desc, buttons) {
+      overlay.querySelector("#dm-modal-title").textContent = title;
+      overlay.querySelector("#dm-modal-desc").innerHTML = desc;
+      const actions = overlay.querySelector("#dm-modal-actions");
+      actions.innerHTML = "";
+      buttons.forEach((b) => {
+        const btn = document.createElement("button");
+        btn.className = `dm-btn-action ${b.primary ? "dm-btn-primary" : ""}`;
+        btn.innerHTML = b.label;
+        btn.onclick = () => { b.onClick?.(btn); if (b.close !== false) modal.style.display = "none"; };
+        actions.appendChild(btn);
+      });
+      modal.style.display = "flex";
+    }
+    modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+
+    // Initial Volume Restoration
+    let lastVol = parseFloat(localStorage.getItem("dm_player_volume")) || 0.5;
+    video.volume = Math.max(0, Math.min(1, lastVol));
+    video.muted = localStorage.getItem("dm_player_muted") === "true";
+
+    function syncVolUI() {
+      const v = video.muted ? 0 : video.volume;
+      volFill.style.width = `${Math.round(v * 100)}%`;
+      volBtn.innerHTML = v === 0 || video.muted ? ICONS.volMute : (v < 0.5 ? ICONS.volLow : ICONS.volHigh);
+    }
+    syncVolUI();
 
     let hudTimer = null;
     function showHud(icon, text, progress = null) {
-      hudIcon.innerHTML = typeof icon === "string" && icon.trim().startsWith("<svg") ? icon : icon;
-      hudText.textContent = typeof text === "string" ? text.replace(/^(Volume|Speed)\s+/i, "") : text;
-
-      if (progress !== null && progress !== undefined) {
-        const p = Math.max(0, Math.min(1, progress));
-        hudRingBar.style.opacity = p <= 0.001 ? "0" : "1";
-        hudRingBar.style.strokeDashoffset = String(HUD_RING_CIRCUMFERENCE * (1 - p));
-      } else {
-        hudRingBar.style.opacity = "1";
-        hudRingBar.style.strokeDashoffset = "0";
-      }
-
+      hudIcon.innerHTML = icon;
+      hudText.textContent = text;
+      hudRing.style.strokeDashoffset = progress !== null ? String(226.2 * (1 - Math.max(0, Math.min(1, progress)))) : "0";
       hud.classList.add("show");
       clearTimeout(hudTimer);
-      hudTimer = setTimeout(() => hud.classList.remove("show"), 800);
+      hudTimer = setTimeout(() => hud.classList.remove("show"), 750);
     }
 
-    const spinner = document.createElement("div");
-    spinner.className = "dm-buffering-spinner";
-    stage.appendChild(spinner);
-
-    let isZip = false;
-    try {
-      isZip = /\.(?:zip|rar|7z|tar|gz)$/i.test(new URL(streamUrl, window.location.href).pathname);
-    } catch (e) {}
-
-    const errorOverlay = document.createElement("div");
-    errorOverlay.style.cssText = `
-      position: absolute; inset: 0; background: rgba(6, 9, 18, 0.96);
-      display: ${isZip ? "flex" : "none"}; align-items: center; justify-content: center;
-      padding: 24px; box-sizing: border-box; z-index: 35; text-align: center;
-    `;
-    const errorBox = document.createElement("div");
-    errorBox.style.cssText = "max-width: 500px; display: flex; flex-direction: column; align-items: center; gap: 14px;";
-    errorBox.innerHTML = `
-      <div style="font-size: 44px; line-height: 1;">${isZip ? "📦" : "⚠️"}</div>
-      <div style="font-size: 17px; font-weight: 800; color: #ffffff;">${isZip ? "ZIP Archive Detected" : "Browser Codec Notice"}</div>
-      <div style="font-size: 13px; color: #94a3b8; line-height: 1.6;">
-        ${isZip
-          ? "This movie release was uploaded inside a ZIP archive (.zip). Web browsers cannot stream compressed archives directly. Click Download to save and extract the video."
-          : "This file format or audio track (e.g. MKV container, Dolby EAC3/DTS audio, 10-bit HEVC) cannot be natively decoded in Chrome. Download the file directly or copy the stream URL to play in VLC or MPV."}
-      </div>
-      <div style="display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; justify-content: center;">
-        <button id="dm-err-dl" class="dm-btn-action" style="background: #e50914; border-color: #e50914; color: #fff;">${ICONS.download} Download File</button>
-        <button id="dm-err-copy" class="dm-btn-action">${ICONS.copy} Copy Stream URL</button>
-        <button id="dm-err-mpv" class="dm-btn-action">▶ Copy MPV</button>
-        <a id="dm-err-vlc" class="dm-btn-action" href="vlc://${streamUrl}">🚀 Open VLC</a>
-        <button id="dm-err-open" class="dm-btn-action">🌐 Open in New Tab</button>
-      </div>
-    `;
-    errorOverlay.appendChild(errorBox);
-    stage.appendChild(errorOverlay);
-
-    const topBar = document.createElement("div");
-    topBar.className = "dm-floating-top";
-
-    const titleBox = document.createElement("div");
-    titleBox.style.cssText = "min-width: 0; display: flex; flex-direction: column; gap: 2px;";
-
-    const badge = document.createElement("span");
-    badge.textContent = "DESIREMOVIES  •  ONLINE WATCH";
-    badge.style.cssText = "color: #e50914; font-size: 11px; font-weight: 800; letter-spacing: 0.12em;";
-
-    const titleEl = document.createElement("span");
-    titleEl.textContent = titleText || "Video Stream";
-    titleEl.style.cssText = "color: #ffffff; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw;";
-    titleBox.append(badge, titleEl);
-
-    const topActions = document.createElement("div");
-    topActions.style.cssText = "display: flex; align-items: center; gap: 8px; flex-shrink: 0;";
-
-    function flashBtn(btn, html, delay = 2000, fallback = btn.innerHTML) {
-      btn.innerHTML = html;
-      setTimeout(() => { btn.innerHTML = fallback; }, delay);
+    function triggerPulse(icon) {
+      pulse.innerHTML = icon;
+      pulse.classList.remove("show");
+      void pulse.offsetWidth;
+      pulse.classList.add("show");
     }
 
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "dm-btn-action";
-    copyBtn.innerHTML = `${ICONS.copy} <span>Copy Link</span>`;
-    copyBtn.title = "Copy direct video stream URL";
-    copyBtn.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(streamUrl);
-        flashBtn(copyBtn, "✓ <span>Copied!</span>", 2000, `${ICONS.copy} <span>Copy Link</span>`);
-      } catch (e) {
-        flashBtn(copyBtn, "❌ <span>Failed</span>", 2000, `${ICONS.copy} <span>Copy Link</span>`);
-      }
-    };
-
-    const downloadBtn = document.createElement("button");
-    downloadBtn.type = "button";
-    downloadBtn.className = "dm-btn-action";
-    downloadBtn.innerHTML = `${ICONS.download} <span>Download</span>`;
-    downloadBtn.title = "Download video file directly";
-    downloadBtn.onclick = async () => {
-      downloadBtn.innerHTML = `⏳ <span>Starting…</span>`;
-      try {
-        const res = await sendBg("full_bypass", { url: bypassUrl });
-        flashBtn(downloadBtn, res?.success ? "✅ <span>Started</span>" : "❌ <span>Failed</span>", 3000, `${ICONS.download} <span>Download</span>`);
-      } catch (e) {
-        flashBtn(downloadBtn, "❌ <span>Error</span>", 3000, `${ICONS.download} <span>Download</span>`);
-      }
-    };
-
-    const noAudioBtn = document.createElement("button");
-    noAudioBtn.type = "button";
-    noAudioBtn.className = "dm-btn-action";
-    noAudioBtn.innerHTML = `<span>🔊 No Sound?</span>`;
-    noAudioBtn.title = "Audio troubleshooting (Dolby EAC3 / DTS)";
-
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "dm-btn-action dm-btn-close";
-    closeBtn.innerHTML = `${ICONS.close} <span>Close</span>`;
-    closeBtn.title = "Close player (Esc)";
-
-    topActions.append(noAudioBtn, copyBtn, downloadBtn, closeBtn);
-    topBar.append(titleBox, topActions);
-
-    const audioModal = document.createElement("div");
-    audioModal.style.cssText = "position:absolute;inset:0;background:rgba(5,8,15,0.92);display:none;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;z-index:42;";
-    audioModal.innerHTML = `
-      <div style="max-width:440px;width:90vw;background:#0c121e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;color:#fff;text-align:center;display:flex;flex-direction:column;gap:12px;">
-        <div style="font-size:32px;line-height:1;">🔇</div>
-        <div style="font-size:15px;font-weight:800;">No Audio in Browser?</div>
-        <div style="font-size:13px;color:#94a3b8;line-height:1.6;text-align:left;">
-          Web browsers cannot decode multi-channel <b>Dolby Digital (AC3/E-AC3)</b> or <b>DTS</b> audio tracks. Copy the stream URL to play in VLC/MPV or download the file directly.
-        </div>
-        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
-          <button id="dm-audio-copy" class="dm-btn-action" style="background:#e50914;border-color:#e50914;color:#fff;">${ICONS.copy} Copy Stream URL</button>
-          <button id="dm-audio-mpv" class="dm-btn-action">▶ Copy MPV</button>
-          <a id="dm-audio-vlc" class="dm-btn-action" href="vlc://${streamUrl}">🚀 Open VLC</a>
-          <button id="dm-audio-close" class="dm-btn-action">Got it</button>
-        </div>
-      </div>
-    `;
-    stage.appendChild(audioModal);
-
-    const copyMpvCmd = async (btn) => {
-      try {
-        await navigator.clipboard.writeText(`mpv "${streamUrl}"`);
-        flashBtn(btn, "✓ <span>Copied MPV!</span>", 2000, "▶ Copy MPV");
-      } catch (e) {
-        flashBtn(btn, "❌ <span>Failed</span>", 2000, "▶ Copy MPV");
-      }
-    };
-
-    noAudioBtn.onclick = () => { audioModal.style.display = "flex"; };
-    audioModal.querySelector("#dm-audio-copy").onclick = () => { copyBtn.click(); audioModal.style.display = "none"; };
-    audioModal.querySelector("#dm-audio-mpv").onclick = function () { copyMpvCmd(this); };
-    audioModal.querySelector("#dm-audio-close").onclick = () => { audioModal.style.display = "none"; };
-    audioModal.onclick = (e) => { if (e.target === audioModal) audioModal.style.display = "none"; };
-    errorBox.querySelector("#dm-err-mpv")?.addEventListener("click", function () { copyMpvCmd(this); });
-
-    const bottomBar = document.createElement("div");
-    bottomBar.className = "dm-floating-bottom";
-
-    const progressTrack = document.createElement("div");
-    progressTrack.className = "dm-progress-track";
-
-    const bufferBar = document.createElement("div");
-    bufferBar.className = "dm-buffer-bar";
-
-    const playedBar = document.createElement("div");
-    playedBar.className = "dm-played-bar";
-
-    const thumb = document.createElement("div");
-    thumb.className = "dm-scrubber-thumb";
-    playedBar.appendChild(thumb);
-
-    const tooltip = document.createElement("div");
-    tooltip.className = "dm-time-tooltip";
-    progressTrack.append(bufferBar, playedBar, tooltip);
-
-    const controlsRow = document.createElement("div");
-    controlsRow.style.cssText = "display: flex; align-items: center; justify-content: space-between; gap: 12px;";
-
-    const leftControls = document.createElement("div");
-    leftControls.style.cssText = "display: flex; align-items: center; gap: 6px;";
-
-    const playBtn = document.createElement("button");
-    playBtn.type = "button";
-    playBtn.className = "dm-ctrl-btn";
-    playBtn.innerHTML = ICONS.play;
-    playBtn.title = "Play / Pause (Space)";
-
-    const rewindBtn = document.createElement("button");
-    rewindBtn.type = "button";
-    rewindBtn.className = "dm-ctrl-btn";
-    rewindBtn.innerHTML = ICONS.replay10;
-    rewindBtn.title = "Rewind 10s (Left Arrow)";
-
-    const fwdBtn = document.createElement("button");
-    fwdBtn.type = "button";
-    fwdBtn.className = "dm-ctrl-btn";
-    fwdBtn.innerHTML = ICONS.forward10;
-    fwdBtn.title = "Forward 10s (Right Arrow)";
-
-    const volumeBox = document.createElement("div");
-    volumeBox.className = "dm-volume-box";
-
-    const volumeBtn = document.createElement("button");
-    volumeBtn.type = "button";
-    volumeBtn.className = "dm-ctrl-btn";
-    volumeBtn.innerHTML = ICONS.volumeHigh;
-    volumeBtn.title = "Mute / Unmute (M)";
-
-    const volSlider = document.createElement("div");
-    volSlider.className = "dm-vol-slider";
-
-    const volFill = document.createElement("div");
-    volFill.className = "dm-vol-fill";
-
-    const volThumb = document.createElement("div");
-    volThumb.className = "dm-vol-thumb";
-    volFill.appendChild(volThumb);
-    volSlider.appendChild(volFill);
-    volumeBox.append(volumeBtn, volSlider);
-
-    let showRemaining = false;
-    const timeDisplay = document.createElement("span");
-    timeDisplay.textContent = "0:00 / 0:00";
-    timeDisplay.style.cssText = "color: #cbd5e1; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 10px; white-space: nowrap; cursor: pointer; user-select: none;";
-    timeDisplay.title = "Click to toggle remaining time";
-    timeDisplay.onclick = () => {
-      showRemaining = !showRemaining;
-      updateProgress();
-    };
-
-    leftControls.append(playBtn, rewindBtn, fwdBtn, volumeBox, timeDisplay);
-
-    const rightControls = document.createElement("div");
-    rightControls.style.cssText = "display: flex; align-items: center; gap: 6px;";
-
-    const speedBtn = document.createElement("button");
-    speedBtn.type = "button";
-    speedBtn.className = "dm-speed-pill";
-    speedBtn.textContent = "1x";
-    speedBtn.title = "Playback Speed";
-
-    const pipBtn = document.createElement("button");
-    pipBtn.type = "button";
-    pipBtn.className = "dm-ctrl-btn";
-    pipBtn.innerHTML = ICONS.pip;
-    pipBtn.title = "Picture-in-Picture (P)";
-
-    const fsBtn = document.createElement("button");
-    fsBtn.type = "button";
-    fsBtn.className = "dm-ctrl-btn";
-    fsBtn.innerHTML = ICONS.fullscreen;
-    fsBtn.title = "Toggle Fullscreen (F)";
-
-    const helpBtn = document.createElement("button");
-    helpBtn.type = "button";
-    helpBtn.className = "dm-ctrl-btn";
-    helpBtn.innerHTML = ICONS.keyboard;
-    helpBtn.title = "Keyboard Shortcuts";
-
-    rightControls.append(speedBtn, pipBtn, fsBtn, helpBtn);
-    controlsRow.append(leftControls, rightControls);
-
-    bottomBar.append(progressTrack, controlsRow);
-    stage.append(topBar, bottomBar);
-    container.appendChild(stage);
-    overlay.appendChild(container);
-    document.documentElement.appendChild(overlay);
-
-    const helpModal = document.createElement("div");
-    helpModal.style.cssText = `
-      position: absolute; inset: 0; background: rgba(5, 8, 15, 0.9);
-      display: none; align-items: center; justify-content: center;
-      padding: 24px; box-sizing: border-box; z-index: 40;
-    `;
-    const helpCard = document.createElement("div");
-    helpCard.style.cssText = `
-      width: min(440px, 90vw); background: #0c121e; border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 12px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.8); color: #fff;
-    `;
-    helpCard.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
-        <span style="font-size: 15px; font-weight: 800;">⌨️ Keyboard Shortcuts</span>
-        <button id="dm-help-close" style="background: none; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">✕</button>
-      </div>
-      <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #cbd5e1;">
-        <div style="display: flex; justify-content: space-between;"><span>Play / Pause</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">Space / K</kbd></div>
-        <div style="display: flex; justify-content: space-between;"><span>Seek ±10 seconds</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">← / → or J / L</kbd></div>
-        <div style="display: flex; justify-content: space-between;"><span>Volume ±5%</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">↑ / ↓ or Wheel</kbd></div>
-        <div style="display: flex; justify-content: space-between;"><span>Mute Toggle</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">M</kbd></div>
-        <div style="display: flex; justify-content: space-between;"><span>Toggle Fullscreen</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">F / Double-Click</kbd></div>
-        <div style="display: flex; justify-content: space-between;"><span>Picture in Picture</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">P</kbd></div>
-        <div style="display: flex; justify-content: space-between;"><span>Jump to 0% - 90%</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">0 - 9</kbd></div>
-        <div style="display: flex; justify-content: space-between;"><span>Close / Exit FS</span><kbd style="background:#1e293b;padding:2px 6px;border-radius:4px;">Esc</kbd></div>
-      </div>
-    `;
-    helpModal.appendChild(helpCard);
-    stage.appendChild(helpModal);
-
-    helpBtn.onclick = () => { helpModal.style.display = "flex"; };
-    helpCard.querySelector("#dm-help-close").onclick = () => { helpModal.style.display = "none"; };
-    helpModal.onclick = (e) => { if (e.target === helpModal) helpModal.style.display = "none"; };
-
-    let seekTarget = null;
-    let seekDebounce = null;
-
-    function getValidDuration() {
-      if (Number.isFinite(video.duration) && video.duration > 0) return video.duration;
-      if (video.seekable && video.seekable.length > 0) return video.seekable.end(video.seekable.length - 1);
-      return 0;
-    }
-
-    function updateProgress() {
-      const dur = getValidDuration();
-      const cur = seekTarget !== null ? seekTarget : video.currentTime;
-      if (dur > 0) {
-        playedBar.style.width = `${Math.min(100, Math.max(0, (cur / dur) * 100))}%`;
-        const timeStr = showRemaining ? `-${formatTime(Math.max(0, dur - cur))}` : formatTime(cur);
-        timeDisplay.textContent = `${timeStr} / ${formatTime(dur)}`;
-      } else {
-        timeDisplay.textContent = `${formatTime(cur)} / 0:00`;
-      }
-    }
-
-    function updateBuffer() {
-      const dur = getValidDuration();
-      if (!dur || !video.buffered.length) return;
-      for (let i = 0; i < video.buffered.length; i++) {
-        if (video.buffered.start(i) <= video.currentTime && video.currentTime <= video.buffered.end(i)) {
-          bufferBar.style.width = `${Math.min(100, (video.buffered.end(i) / dur) * 100)}%`;
-          break;
-        }
-      }
-    }
-
-    function seekTo(targetTime) {
-      const dur = getValidDuration();
-      seekTarget = Math.max(0, Math.min(dur || Infinity, targetTime));
-      updateProgress();
-
-      clearTimeout(seekDebounce);
-      seekDebounce = setTimeout(() => {
-        try {
-          if ("fastSeek" in video) video.fastSeek(seekTarget);
-          else video.currentTime = seekTarget;
-        } catch (e) {
-          video.currentTime = seekTarget;
-        }
-      }, 40);
-    }
-
-    function seekRelative(deltaSeconds) {
-      const current = seekTarget !== null ? seekTarget : video.currentTime;
-      seekTo(current + deltaSeconds);
-      triggerPulse(deltaSeconds > 0 ? ICONS.forward10 : ICONS.replay10);
-    }
-
-    const videoKey = getPlaybackKey(bypassUrl, streamUrl, titleText);
-    let resumeBanner = null;
-    let resumeTimer = null;
-
-    function dismissResumeBanner() {
-      clearTimeout(resumeTimer);
-      resumeTimer = null;
-      if (resumeBanner) {
-        resumeBanner.classList.add("dm-hidden");
-        setTimeout(() => {
-          resumeBanner?.remove();
-          resumeBanner = null;
-        }, 250);
-      }
-    }
-
-    getSavedPlayback(videoKey).then((savedTime) => {
-      if (!savedTime || savedTime < 5 || !document.contains(overlay)) return;
-
-      resumeBanner = document.createElement("div");
-      resumeBanner.className = "dm-resume-banner";
-      resumeBanner.innerHTML = `
-        <div style="display:flex;align-items:center;gap:7px;">
-          <span style="font-size:15px;">⏱️</span>
-          <span>Resume from <b>${formatTime(savedTime)}</b>?</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <button type="button" class="dm-resume-btn dm-resume-btn-primary">▶ Resume</button>
-          <button type="button" class="dm-resume-btn dm-resume-btn-secondary">↺ Start from beginning</button>
-          <button type="button" class="dm-resume-close" title="Dismiss">✕</button>
-        </div>
-      `;
-
-      const resumeBtn = resumeBanner.querySelector(".dm-resume-btn-primary");
-      const restartBtn = resumeBanner.querySelector(".dm-resume-btn-secondary");
-      const closeResumeBtn = resumeBanner.querySelector(".dm-resume-close");
-
-      resumeBtn.onclick = (e) => {
-        e.stopPropagation();
-        seekTo(savedTime);
-        video.play().catch(() => {});
-        showHud("⏱️", formatTime(savedTime));
-        dismissResumeBanner();
-      };
-
-      restartBtn.onclick = (e) => {
-        e.stopPropagation();
-        seekTo(0);
-        clearPlayback(videoKey);
-        video.play().catch(() => {});
-        showHud("↺", "0:00");
-        dismissResumeBanner();
-      };
-
-      closeResumeBtn.onclick = (e) => {
-        e.stopPropagation();
-        dismissResumeBanner();
-      };
-
-      stage.appendChild(resumeBanner);
-      resumeTimer = setTimeout(dismissResumeBanner, 10000);
-    });
-
-    function togglePlay() {
-      if (video.paused) {
-        video.play().catch(() => {});
-        playBtn.innerHTML = ICONS.pause;
-        triggerPulse(ICONS.play);
-      } else {
-        video.pause();
-        playBtn.innerHTML = ICONS.play;
-        triggerPulse(ICONS.pause);
-      }
-    }
-
-    function syncVolumeUI() {
-      const effectiveVol = video.muted ? 0 : video.volume;
-      volFill.style.width = `${Math.round(effectiveVol * 100)}%`;
-      volumeBtn.innerHTML = (video.muted || effectiveVol === 0) ? ICONS.volumeMute : (effectiveVol < 0.5 ? ICONS.volumeLow : ICONS.volumeHigh);
-    }
-
-    const saveVol = () => {
-      try {
-        localStorage.setItem("dm_player_volume", String(prevVolume));
-        localStorage.setItem("dm_player_muted", String(video.muted));
-      } catch {}
-    };
-
-    function setVolume(level) {
-      const clamped = Math.max(0, Math.min(1, Math.round(level * 100) / 100));
+    function setVol(lvl) {
+      const clamped = Math.max(0, Math.min(1, lvl));
       video.volume = clamped;
       video.muted = clamped === 0;
-      if (clamped > 0) prevVolume = clamped;
-      saveVol();
-      syncVolumeUI();
-      const effective = video.muted || clamped === 0 ? 0 : clamped;
-      const icon = (video.muted || clamped === 0) ? ICONS.volumeMute : (clamped < 0.5 ? ICONS.volumeLow : ICONS.volumeHigh);
-      showHud(icon, `${Math.round(clamped * 100)}%`, effective);
+      if (clamped > 0) lastVol = clamped;
+      localStorage.setItem("dm_player_volume", String(lastVol));
+      localStorage.setItem("dm_player_muted", String(video.muted));
+      syncVolUI();
+      showHud(video.muted ? ICONS.volMute : ICONS.volHigh, `${Math.round(clamped * 100)}%`, video.muted ? 0 : clamped);
     }
 
-    function adjustVolume(delta) {
-      setVolume((video.muted ? 0 : video.volume) + delta);
+    // Play/Pause & Duration
+    const getDur = () => (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : (video.seekable?.length ? video.seekable.end(video.seekable.length - 1) : 0));
+    let showRemaining = false;
+
+    function updateProgress() {
+      const dur = getDur(), cur = video.currentTime;
+      playedBar.style.width = dur > 0 ? `${(cur / dur) * 100}%` : "0%";
+      const curStr = showRemaining && dur > 0 ? `-${fmtTime(dur - cur)}` : fmtTime(cur);
+      timeDisplay.textContent = `${curStr} / ${fmtTime(dur)}`;
     }
 
-    function toggleMute() {
-      if (video.muted || video.volume === 0) {
-        video.muted = false;
-        video.volume = prevVolume > 0 ? prevVolume : 0.4;
-      } else {
-        prevVolume = video.volume > 0 ? video.volume : 0.4;
-        video.muted = true;
-      }
-      saveVol();
-      syncVolumeUI();
-      const effective = video.muted ? 0 : video.volume;
-      const icon = video.muted ? ICONS.volumeMute : (video.volume < 0.5 ? ICONS.volumeLow : ICONS.volumeHigh);
-      showHud(icon, video.muted ? "Muted" : `${Math.round(video.volume * 100)}%`, effective);
+    function togglePlay() {
+      if (video.paused) { video.play().catch(() => {}); playBtn.innerHTML = ICONS.pause; triggerPulse(ICONS.play); }
+      else { video.pause(); playBtn.innerHTML = ICONS.play; triggerPulse(ICONS.pause); }
     }
 
-    volumeBtn.onclick = toggleMute;
-
-    let isDraggingVol = false;
-    function handleVolScrub(e) {
-      const rect = volSlider.getBoundingClientRect();
-      setVolume(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+    function seekRelative(delta) {
+      const dur = getDur();
+      video.currentTime = Math.max(0, Math.min(dur || Infinity, video.currentTime + delta));
+      triggerPulse(delta > 0 ? ICONS.forward : ICONS.rewind);
     }
 
-    volSlider.onmousedown = (e) => {
-      isDraggingVol = true;
-      volSlider.classList.add("is-dragging");
-      handleVolScrub(e);
-    };
-
-    function isFullscreenActive() {
-      return !!(document.fullscreenElement || document.webkitFullscreenElement);
-    }
-
-    function toggleFullscreen() {
-      try {
-        if (!isFullscreenActive()) {
-          const p = container.requestFullscreen?.() || container.webkitRequestFullscreen?.();
-          if (p?.catch) p.catch(() => {});
-        } else {
-          const p = document.exitFullscreen?.() || document.webkitExitFullscreen?.();
-          if (p?.catch) p.catch(() => {});
-        }
-      } catch {}
-    }
-
-    fsBtn.onclick = (e) => {
-      e.stopPropagation();
-      toggleFullscreen();
-    };
-
-    const onFullscreenChange = () => {
-      const isFs = isFullscreenActive();
-      container.classList.toggle("is-fullscreen", isFs);
-      fsBtn.innerHTML = isFs ? ICONS.fullscreenExit : ICONS.fullscreen;
-      fsBtn.title = isFs ? "Exit Fullscreen (F)" : "Toggle Fullscreen (F)";
-    };
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
-
-    video.addEventListener("play", () => { playBtn.innerHTML = ICONS.pause; });
-    video.addEventListener("pause", () => {
-      playBtn.innerHTML = ICONS.play;
-      savePlayback(videoKey, video.currentTime, getValidDuration());
-    });
-    let lastSavedSec = 0;
-    video.addEventListener("timeupdate", () => {
-      updateProgress();
-      updateBuffer();
-      const cur = video.currentTime;
-      if (Math.abs(cur - lastSavedSec) >= 3) {
-        lastSavedSec = cur;
-        savePlayback(videoKey, cur, getValidDuration());
-      }
-    });
-    video.addEventListener("ended", () => {
-      clearPlayback(videoKey);
-    });
-    video.addEventListener("loadedmetadata", () => { updateProgress(); updateBuffer(); syncVolumeUI(); });
-    video.addEventListener("progress", updateBuffer);
-
-    const showSpinner = () => { spinner.style.display = "block"; };
-    const hideSpinner = () => { spinner.style.display = "none"; };
-    ["seeking", "waiting", "stalled"].forEach((ev) => video.addEventListener(ev, showSpinner));
-    ["playing", "canplay"].forEach((ev) => video.addEventListener(ev, hideSpinner));
-    video.addEventListener("seeked", () => { seekTarget = null; updateProgress(); });
-    video.addEventListener("error", () => { hideSpinner(); errorOverlay.style.display = "flex"; });
-
-    let isDraggingScrubber = false;
-    function handleScrubberScrub(e) {
-      const rect = progressTrack.getBoundingClientRect();
-      const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const dur = getValidDuration();
-      if (dur > 0) seekTo(fraction * dur);
-    }
-
-    progressTrack.addEventListener("mousedown", (e) => {
-      isDraggingScrubber = true;
-      progressTrack.classList.add("is-dragging");
-      handleScrubberScrub(e);
+    // Resume position
+    const videoKey = getPlaybackKey(bypassUrl, streamUrl, titleText);
+    getSavedPos(videoKey).then((saved) => {
+      if (!saved || saved < 5 || !document.contains(overlay)) return;
+      const banner = document.createElement("div");
+      banner.className = "dm-resume-banner";
+      banner.innerHTML = `
+        <span>⏱️ Resume from <b>${fmtTime(saved)}</b>?</span>
+        <button class="dm-resume-btn dm-resume-btn-primary" id="dm-res-yes">▶ Resume</button>
+        <button class="dm-resume-btn dm-resume-btn-secondary" id="dm-res-no">↺ Restart</button>
+        <button class="dm-resume-close">✕</button>
+      `;
+      stage.appendChild(banner);
+      const rm = () => { banner.classList.add("dm-hidden"); setTimeout(() => banner.remove(), 250); };
+      banner.querySelector("#dm-res-yes").onclick = () => { video.currentTime = saved; video.play().catch(() => {}); rm(); };
+      banner.querySelector("#dm-res-no").onclick = () => { video.currentTime = 0; clearSavedPos(videoKey); rm(); };
+      banner.querySelector(".dm-resume-close").onclick = rm;
+      setTimeout(rm, 10000);
     });
 
-    progressTrack.addEventListener("mousemove", (e) => {
-      const rect = progressTrack.getBoundingClientRect();
-      const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const dur = getValidDuration();
-      if (dur > 0) {
-        tooltip.textContent = formatTime(fraction * dur);
-        tooltip.style.left = `${e.clientX - rect.left}px`;
-        tooltip.style.opacity = "1";
-      }
-    });
-    progressTrack.addEventListener("mouseleave", () => {
-      if (!isDraggingScrubber) tooltip.style.opacity = "0";
-    });
-
-    const onGlobalMouseMove = (e) => {
-      if (isDraggingScrubber) handleScrubberScrub(e);
-      if (isDraggingVol) handleVolScrub(e);
-    };
-    const onGlobalMouseUp = () => {
-      if (isDraggingScrubber) {
-        isDraggingScrubber = false;
-        progressTrack.classList.remove("is-dragging");
-        tooltip.style.opacity = "0";
-      }
-      if (isDraggingVol) {
-        isDraggingVol = false;
-        volSlider.classList.remove("is-dragging");
-      }
-    };
-    window.addEventListener("mousemove", onGlobalMouseMove);
-    window.addEventListener("mouseup", onGlobalMouseUp);
-
-    playBtn.addEventListener("click", togglePlay);
-    rewindBtn.addEventListener("click", () => seekRelative(-10));
-    fwdBtn.addEventListener("click", () => seekRelative(10));
-
-    const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-    let speedIdx = 2;
-    speedBtn.addEventListener("click", () => {
-      speedIdx = (speedIdx + 1) % SPEEDS.length;
-      const spd = SPEEDS[speedIdx];
-      video.playbackRate = spd;
-      speedBtn.textContent = `${spd}x`;
-      showHud("⚡", `${spd}x`, spd / 2);
-    });
-
-    if (document.pictureInPictureEnabled) {
-      pipBtn.addEventListener("click", async () => {
-        try {
-          if (document.pictureInPictureElement) await document.exitPictureInPicture();
-          else await video.requestPictureInPicture();
-        } catch (e) {}
-      });
-    } else {
-      pipBtn.style.display = "none";
-    }
-
-    let controlsHideTimer = null;
-    function showControls() {
+    // Control bar autohide
+    let hideTimer = null;
+    function pokeControls() {
       topBar.classList.remove("dm-controls-hidden");
       bottomBar.classList.remove("dm-controls-hidden");
-      clearTimeout(controlsHideTimer);
-      if (!video.paused) {
-        controlsHideTimer = setTimeout(() => {
-          topBar.classList.add("dm-controls-hidden");
-          bottomBar.classList.add("dm-controls-hidden");
-        }, 2500);
-      }
+      clearTimeout(hideTimer);
+      if (!video.paused) hideTimer = setTimeout(() => {
+        topBar.classList.add("dm-controls-hidden");
+        bottomBar.classList.add("dm-controls-hidden");
+      }, 2500);
     }
+    stage.addEventListener("mousemove", pokeControls);
 
-    ["mousemove", "mouseenter"].forEach((ev) => stage.addEventListener(ev, showControls));
-    [topBar, bottomBar].forEach((el) =>
-      el.addEventListener("mouseenter", () => {
-        clearTimeout(controlsHideTimer);
-        topBar.classList.remove("dm-controls-hidden");
-        bottomBar.classList.remove("dm-controls-hidden");
-      })
-    );
-
-    let clickTimer = null;
-    stage.addEventListener("click", (e) => {
-      if (e.target !== video && e.target !== stage) return;
-      if (clickTimer) {
-        clearTimeout(clickTimer);
-        clickTimer = null;
-        return;
+    // Timeline Scrubbing
+    let isScrubbing = false;
+    function scrubTrack(e) {
+      const r = track.getBoundingClientRect(), dur = getDur();
+      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      if (dur > 0) video.currentTime = pct * dur;
+    }
+    track.onmousedown = (e) => { isScrubbing = true; track.classList.add("is-dragging"); scrubTrack(e); };
+    track.onmousemove = (e) => {
+      const r = track.getBoundingClientRect(), dur = getDur();
+      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      if (dur > 0) {
+        tooltip.textContent = fmtTime(pct * dur);
+        tooltip.style.left = `${e.clientX - r.left}px`;
+        tooltip.style.opacity = "1";
       }
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        togglePlay();
-      }, 220);
-    });
-    stage.addEventListener("dblclick", (e) => {
-      if (e.target !== video && e.target !== stage) return;
-      clearTimeout(clickTimer);
-      clickTimer = null;
-      toggleFullscreen();
-    });
-    stage.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
-    }, { passive: false });
+    };
+    track.onmouseleave = () => { if (!isScrubbing) tooltip.style.opacity = "0"; };
 
-    errorBox.querySelector("#dm-err-dl")?.addEventListener("click", () => downloadBtn.click());
-    errorBox.querySelector("#dm-err-copy")?.addEventListener("click", () => copyBtn.click());
-    errorBox.querySelector("#dm-err-open")?.addEventListener("click", () => window.open(streamUrl, "_blank"));
+    // Volume Scrubbing
+    let isVolScrubbing = false;
+    function scrubVol(e) {
+      const r = volSlider.getBoundingClientRect();
+      setVol((e.clientX - r.left) / r.width);
+    }
+    volSlider.onmousedown = (e) => { isVolScrubbing = true; scrubVol(e); };
 
-    function closePlayer() {
-      if (isFullscreenActive()) {
-        (document.exitFullscreen?.() || document.webkitExitFullscreen?.())?.catch?.(() => {});
-      }
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
-      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
-      window.removeEventListener("keydown", onKeydown, true);
-      window.removeEventListener("mousemove", onGlobalMouseMove);
-      window.removeEventListener("mouseup", onGlobalMouseUp);
-      window.removeEventListener("pagehide", onPageHide);
-      clearTimeout(resumeTimer);
-      if (resumeBanner) resumeBanner.remove();
-      savePlayback(videoKey, video.currentTime, getValidDuration());
-      clearTimeout(hudTimer);
-      clearTimeout(seekDebounce);
-      clearTimeout(controlsHideTimer);
-      clearTimeout(clickTimer);
+    window.addEventListener("mousemove", (e) => {
+      if (isScrubbing) scrubTrack(e);
+      if (isVolScrubbing) scrubVol(e);
+    });
+    window.addEventListener("mouseup", () => {
+      if (isScrubbing) { isScrubbing = false; track.classList.remove("is-dragging"); tooltip.style.opacity = "0"; }
+      isVolScrubbing = false;
+    });
+
+    // Video Events
+    video.ontimeupdate = () => {
+      updateProgress();
+      if (getDur()) updateSavedPos(videoKey, video.currentTime, getDur());
+    };
+    video.onprogress = () => {
+      const dur = getDur();
+      if (dur && video.buffered.length) bufferBar.style.width = `${(video.buffered.end(video.buffered.length - 1) / dur) * 100}%`;
+    };
+    video.onplay = () => { playBtn.innerHTML = ICONS.pause; pokeControls(); };
+    video.onpause = () => { playBtn.innerHTML = ICONS.play; pokeControls(); };
+    video.onseeking = () => { spinner.style.display = "block"; };
+    video.onseeked = () => { spinner.style.display = "none"; };
+    video.onwaiting = () => { spinner.style.display = "block"; };
+    video.onplaying = () => { spinner.style.display = "none"; };
+    video.onerror = () => {
+      spinner.style.display = "none";
+      showDialog("Browser Codec Notice", "This video container or audio codec (e.g. MKV, Dolby EAC3/DTS) cannot be natively decoded in Chrome. Download directly or copy the MPV command to stream smoothly.", [
+        { label: `${ICONS.dl} Download`, primary: true, onClick: () => overlay.querySelector("#dm-btn-dl").click() },
+        { label: "▶ Copy MPV", onClick: (b) => copyText(b, `mpv "${streamUrl}"`, "✓ Copied MPV!"), close: false },
+        { label: "Copy Link", onClick: (b) => copyText(b, streamUrl) }
+      ]);
+    };
+
+    // Button Actions
+    playBtn.onclick = togglePlay;
+    overlay.querySelector("#dm-rw").onclick = () => seekRelative(-10);
+    overlay.querySelector("#dm-ff").onclick = () => seekRelative(10);
+    timeDisplay.onclick = () => { showRemaining = !showRemaining; updateProgress(); };
+    volBtn.onclick = () => setVol(video.muted || video.volume === 0 ? (lastVol || 0.5) : 0);
+
+    const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+    let spdIdx = 2;
+    speedBtn.onclick = () => {
+      spdIdx = (spdIdx + 1) % SPEEDS.length;
+      video.playbackRate = SPEEDS[spdIdx];
+      speedBtn.textContent = `${SPEEDS[spdIdx]}x`;
+      showHud("⚡", `${SPEEDS[spdIdx]}x`, SPEEDS[spdIdx] / 2);
+    };
+
+    const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const toggleFs = () => {
+      if (!isFs()) (container.requestFullscreen || container.webkitRequestFullscreen)?.call(container).catch(() => {});
+      else (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
+    };
+    fsBtn.onclick = toggleFs;
+    document.onfullscreenchange = () => {
+      container.classList.toggle("is-fullscreen", isFs());
+      fsBtn.innerHTML = isFs() ? ICONS.fsExit : ICONS.fs;
+    };
+
+    if (document.pictureInPictureEnabled) {
+      pipBtn.onclick = async () => {
+        try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await video.requestPictureInPicture(); } catch {}
+      };
+    } else pipBtn.style.display = "none";
+
+    overlay.querySelector("#dm-btn-copy").onclick = function () { copyText(this, streamUrl); };
+    overlay.querySelector("#dm-btn-dl").onclick = async function () {
+      this.innerHTML = "⏳ Starting…";
+      const res = await sendBg("full_bypass", { url: bypassUrl }).catch(() => null);
+      flash(this, res?.success ? "✅ Started" : "❌ Failed", 2500, `${ICONS.dl} Download`);
+    };
+
+    overlay.querySelector("#dm-btn-sound").onclick = () => {
+      showDialog("No Audio in Browser?", "Web browsers cannot decode multi-channel <b>Dolby Digital (AC3/E-AC3)</b> or <b>DTS</b> audio tracks. Copy the MPV command to play with full surround sound or download the video.", [
+        { label: "▶ Copy MPV Command", primary: true, onClick: (b) => copyText(b, `mpv "${streamUrl}"`, "✓ Copied MPV!"), close: false },
+        { label: "Copy Link", onClick: (b) => copyText(b, streamUrl) },
+        { label: "Close" }
+      ]);
+    };
+
+    overlay.querySelector("#dm-help").onclick = () => {
+      showDialog("⌨️ Keyboard Shortcuts", `
+        <div class="dm-shortcuts-grid">
+          <div class="dm-shortcut-row"><span>Play / Pause</span><span class="dm-shortcut-key">Space / K</span></div>
+          <div class="dm-shortcut-row"><span>Seek ±10s</span><span class="dm-shortcut-key">← / → or J / L</span></div>
+          <div class="dm-shortcut-row"><span>Volume ±5%</span><span class="dm-shortcut-key">↑ / ↓ or Wheel</span></div>
+          <div class="dm-shortcut-row"><span>Mute</span><span class="dm-shortcut-key">M</span></div>
+          <div class="dm-shortcut-row"><span>Fullscreen</span><span class="dm-shortcut-key">F</span></div>
+          <div class="dm-shortcut-row"><span>Close</span><span class="dm-shortcut-key">Esc</span></div>
+        </div>
+      `, [{ label: "Close" }]);
+    };
+
+    function close() {
+      if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
+      window.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = prevOverflow;
       video.pause();
       video.removeAttribute("src");
@@ -934,209 +477,111 @@
       openerBtn?.focus();
     }
 
-    const onPageHide = () => savePlayback(videoKey, video.currentTime, getValidDuration());
-    window.addEventListener("pagehide", onPageHide);
+    overlay.querySelector("#dm-btn-close").onclick = close;
+    stage.ondblclick = (e) => { if (e.target === video || e.target === stage) toggleFs(); };
+    stage.onclick = (e) => { if (e.target === video) togglePlay(); };
+    stage.onwheel = (e) => { e.preventDefault(); setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05)); };
 
-    closeBtn.addEventListener("click", closePlayer);
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) closePlayer();
-    });
-
-    const keyActions = {
+    const KEY_MAP = {
       " ": togglePlay, "k": togglePlay,
       "arrowleft": () => seekRelative(-10), "j": () => seekRelative(-10),
       "arrowright": () => seekRelative(10), "l": () => seekRelative(10),
-      "arrowup": () => adjustVolume(0.05),
-      "arrowdown": () => adjustVolume(-0.05),
-      "m": toggleMute,
-      "f": toggleFullscreen,
-      "p": () => pipBtn.click(),
-      "?": () => { helpModal.style.display = helpModal.style.display === "flex" ? "none" : "flex"; },
-      "escape": () => {
-        if (audioModal.style.display === "flex") audioModal.style.display = "none";
-        else if (helpModal.style.display === "flex") helpModal.style.display = "none";
-        else if (isFullscreenActive()) toggleFullscreen();
-        else closePlayer();
-      }
+      "arrowup": () => setVol(video.volume + 0.05),
+      "arrowdown": () => setVol(video.volume - 0.05),
+      "m": () => setVol(video.muted ? (lastVol || 0.5) : 0),
+      "f": toggleFs, "p": () => pipBtn.click(),
+      "escape": () => { modal.style.display === "flex" ? (modal.style.display = "none") : (isFs() ? toggleFs() : close()); }
     };
 
-    function onKeydown(e) {
+    function onKey(e) {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
-      const key = e.key.toLowerCase();
-      if (key >= "0" && key <= "9") {
-        e.preventDefault();
-        e.stopPropagation();
-        const dur = getValidDuration();
-        if (dur > 0) seekTo((Number(key) / 10) * dur);
-        return;
+      const k = e.key.toLowerCase();
+      if (k >= "0" && k <= "9" && getDur() > 0) {
+        e.preventDefault(); e.stopPropagation(); video.currentTime = (Number(k) / 10) * getDur(); return;
       }
-      if (keyActions[key]) {
-        e.preventDefault();
-        e.stopPropagation();
-        keyActions[key]();
-      }
+      if (KEY_MAP[k]) { e.preventDefault(); e.stopPropagation(); KEY_MAP[k](); }
     }
+    window.addEventListener("keydown", onKey, true);
 
-    window.addEventListener("keydown", onKeydown, true);
-    syncVolumeUI();
-    overlay.focus();
     video.play().catch(() => {});
   }
 
-  function addWatchButtons(targetRoot) {
-    const root = targetRoot || document.querySelector("main, article, #content, .content, .entry-content") || document.body;
-    if (!root) return;
-    const anchors = root.querySelectorAll("a[href]");
-    for (const anchor of anchors) {
-      const href = anchor.getAttribute("href");
-      if (!href || !BYPASS_LINK_RE.test(href) || /\/pack\//i.test(href)) continue;
-      if (anchor.dataset.dmWatchProcessed === "true" || anchor.nextElementSibling?.hasAttribute(WATCH_BTN_ATTR)) continue;
-
-      anchor.dataset.dmWatchProcessed = "true";
+  // Inject "Watch Online" buttons
+  function injectWatchButtons() {
+    const anchors = document.querySelectorAll(`a[href]:not([data-dm-processed])`);
+    for (const a of anchors) {
+      const href = a.getAttribute("href");
+      if (!href || !RE_BYPASS.test(href) || /\/pack\//i.test(href)) continue;
+      a.dataset.dmProcessed = "true";
 
       const btn = document.createElement("button");
-      btn.type = "button";
-      btn.setAttribute(WATCH_BTN_ATTR, "true");
-      btn.innerHTML = `<span>▶ Watch Online</span>`;
-      btn.style.cssText = `
-        display: inline-flex; align-items: center; gap: 6px;
-        margin: 4px 0 4px 8px; padding: 6px 12px;
-        background: linear-gradient(135deg, #e50914 0%, #b80710 100%);
-        color: #ffffff; font-weight: 700; font-size: 12px;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        border: none; border-radius: 6px; box-shadow: 0 3px 10px rgba(229, 9, 20, 0.35);
-        cursor: pointer; vertical-align: middle; transition: all 0.15s ease; line-height: 1.2;
-      `;
-      btn.onmouseenter = () => { btn.style.transform = "translateY(-1px)"; btn.style.boxShadow = "0 5px 15px rgba(229, 9, 20, 0.5)"; };
-      btn.onmouseleave = () => { btn.style.transform = "none"; btn.style.boxShadow = "0 3px 10px rgba(229, 9, 20, 0.35)"; };
-
+      btn.className = "dm-btn-watch";
+      btn.innerHTML = "▶ Watch Online";
       btn.onclick = async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (btn.dataset.resolving === "true") return;
-        btn.dataset.resolving = "true";
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = `<span>⏳ Resolving stream…</span>`;
-        btn.style.opacity = "0.8";
-        btn.style.cursor = "wait";
-
-        const pageTitle = document.querySelector("h1.entry-title, h1")?.textContent?.trim() || document.title.replace(/[-|].*$/, "").trim() || "Online Video Stream";
-
+        e.preventDefault(); e.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.innerHTML = "⏳ Resolving…";
+        const title = document.querySelector("h1.entry-title, h1")?.textContent?.trim() || document.title.replace(/[-|].*$/, "").trim();
         try {
           const res = await sendBg("resolve_stream", { url: href });
-          if (res?.success && res.streamUrl) {
-            btn.innerHTML = `<span>▶ Watch Online</span>`;
-            btn.style.opacity = "1";
-            btn.style.cursor = "pointer";
-            delete btn.dataset.resolving;
-            openPlayer(res.streamUrl, href, pageTitle, btn);
-            return;
-          }
-          throw new Error(res?.error || "Stream unavailable");
+          btn.innerHTML = "▶ Watch Online";
+          btn.disabled = false;
+          if (res?.success && res.streamUrl) openPlayer(res.streamUrl, href, title, btn);
+          else throw new Error(res?.error || "Stream unavailable");
         } catch (err) {
-          btn.innerHTML = `<span>❌ ${err.message || "Failed"}</span>`;
-          btn.style.background = "#dc3545";
-          setTimeout(() => {
-            btn.innerHTML = originalHtml;
-            btn.style.background = "linear-gradient(135deg, #e50914 0%, #b80710 100%)";
-            btn.style.opacity = "1";
-            btn.style.cursor = "pointer";
-            delete btn.dataset.resolving;
-          }, 3000);
+          btn.innerHTML = `❌ ${err.message || "Failed"}`;
+          setTimeout(() => { btn.innerHTML = "▶ Watch Online"; btn.disabled = false; }, 3000);
         }
       };
-
-      anchor.insertAdjacentElement("afterend", btn);
+      a.insertAdjacentElement("afterend", btn);
     }
   }
 
-  let observerTimer = null;
-  const debouncedAddWatchButtons = () => {
-    if (observerTimer) return;
-    observerTimer = setTimeout(() => {
-      observerTimer = null;
-      addWatchButtons();
-    }, 250);
-  };
-
-  const initObserver = () => {
-    addWatchButtons();
-    const target = document.querySelector("main, article, #content, .content, .entry-content") || document.body || document.documentElement;
-    if (target) {
-      new MutationObserver(debouncedAddWatchButtons).observe(target, { childList: true, subtree: true });
-    }
-  };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initObserver);
-  } else {
-    initObserver();
-  }
-
-  if (/\/pack\//i.test(window.location.pathname) || /\/pack\//i.test(window.location.href)) {
-    const initPackBtn = () => {
+  // Episode Pack Downloader
+  if (/\/pack\//i.test(location.pathname) || /\/pack\//i.test(location.href)) {
+    const injectPack = () => {
       if (document.getElementById("btn-dl-all-episodes")) return;
       const btn = document.createElement("button");
       btn.id = "btn-dl-all-episodes";
+      btn.className = "dm-btn-pack";
       btn.innerHTML = "⚡ Download All Episodes";
-      btn.style.cssText = "position:fixed;bottom:25px;right:25px;z-index:2147483647;padding:14px 24px;background:#e50914;color:#ffffff;font-weight:bold;font-size:16px;font-family:sans-serif;border:none;border-radius:50px;box-shadow:0 6px 25px rgba(229,9,20,0.6);cursor:pointer;transition:all 0.2s ease;";
-      btn.onmouseover = () => { btn.style.transform = "scale(1.08)"; btn.style.boxShadow = "0 8px 30px rgba(229,9,20,0.8)"; };
-      btn.onmouseout = () => { btn.style.transform = "scale(1)"; btn.style.boxShadow = "0 6px 25px rgba(229,9,20,0.6)"; };
       btn.onclick = async () => {
         btn.disabled = true;
-        btn.innerHTML = "⏳ Resolving All Episodes...";
+        btn.innerHTML = "⏳ Resolving Pack...";
         try {
-          const domLinks = [...document.querySelectorAll('a[href*="/file/"]')].map((a) => a.href).filter(Boolean);
-          const res = await sendBg("bypass_pack", { url: window.location.href, fileUrls: domLinks });
-          if (res?.success) {
-            btn.innerHTML = `✅ All ${res.count} Downloads Started!`;
-            btn.style.background = "#28a745";
-          } else {
-            btn.innerHTML = `❌ ${res?.error || "Failed"}`;
-            btn.style.background = "#dc3545";
-          }
-        } catch (err) {
-          btn.innerHTML = "❌ Error";
-          btn.style.background = "#dc3545";
-        }
-        setTimeout(() => {
-          btn.disabled = false;
-          btn.innerHTML = "⚡ Download All Episodes";
-          btn.style.background = "#e50914";
-        }, 5000);
+          const links = [...document.querySelectorAll('a[href*="/file/"]')].map((el) => el.href).filter(Boolean);
+          const res = await sendBg("bypass_pack", { url: location.href, fileUrls: links });
+          btn.innerHTML = res?.success ? `✅ Started (${res.count})` : `❌ ${res?.error || "Failed"}`;
+        } catch { btn.innerHTML = "❌ Error"; }
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = "⚡ Download All Episodes"; }, 5000);
       };
-      (document.body || document.documentElement).appendChild(btn);
+      document.body.appendChild(btn);
     };
-
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initPackBtn);
-    else initPackBtn();
-    setTimeout(initPackBtn, 800);
-    setTimeout(initPackBtn, 2000);
+    injectPack();
+    setTimeout(injectPack, 1000);
   }
 
+  // Intercept direct download links
   document.addEventListener("click", async (e) => {
-    const anchor = e.target.closest("a");
-    if (!anchor) return;
-    const href = anchor.getAttribute("href");
-    if (!href || anchor.dataset.bypassing || !BYPASS_LINK_RE.test(href) || /\/pack\//i.test(href)) return;
+    const a = e.target.closest("a");
+    const href = a?.getAttribute("href");
+    if (!href || a.dataset.bypassing || !RE_BYPASS.test(href) || /\/pack\//i.test(href)) return;
 
-    e.preventDefault();
-    e.stopPropagation();
-    const restore = showStatus(anchor, "⏳ Connecting…", href);
+    e.preventDefault(); e.stopPropagation();
+    const restore = showStatus(a, "⏳ Connecting…", href);
     try {
       const res = await sendBg("full_bypass", { url: href });
-      if (res?.success) {
-        showStatus(anchor, "✅ Download started", href);
-        setTimeout(restore, 3000);
-        return;
-      }
-      showStatus(anchor, "❌ Failed", href);
-      window.open(href, "_blank");
-    } catch (err) {
-      showStatus(anchor, "❌ Error", href);
+      showStatus(a, res?.success ? "✅ Download started" : "❌ Failed", href);
+      if (!res?.success) window.open(href, "_blank");
+    } catch {
+      showStatus(a, "❌ Error", href);
       window.open(href, "_blank");
     } finally {
-      setTimeout(restore, 2000);
+      setTimeout(restore, 2500);
     }
   });
+
+  injectWatchButtons();
+  new MutationObserver(injectWatchButtons).observe(document.body || document.documentElement, { childList: true, subtree: true });
 })();
