@@ -4,7 +4,7 @@
   if (window.__desiremoviesInjected) return;
   window.__desiremoviesInjected = true;
 
-  const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|gdflix|goflix|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
+  const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katdrama|hubcloud|hubdrive)/i;
   const CACHE_KEY = "dm_playback_cache";
   const TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const activeAnchors = new Map();
@@ -506,16 +506,12 @@
     video.play().catch(() => {});
   }
 
-  function isSameDomain(url) {
-    try { return new URL(url, location.href).hostname === location.hostname; } catch { return false; }
-  }
-
   // Inject "Watch Online" buttons
   function injectWatchButtons() {
     const anchors = document.querySelectorAll(`a[href]:not([data-dm-processed])`);
     for (const a of anchors) {
       const href = a.getAttribute("href");
-      if (!href || !RE_BYPASS.test(href) || /\/pack\//i.test(href) || isSameDomain(href)) continue;
+      if (!href || !RE_BYPASS.test(href) || /\/pack\//i.test(href)) continue;
       a.dataset.dmProcessed = "true";
 
       const btn = document.createElement("button");
@@ -570,7 +566,7 @@
   document.addEventListener("click", async (e) => {
     const a = e.target.closest("a");
     const href = a?.getAttribute("href");
-    if (!href || a.dataset.bypassing || !RE_BYPASS.test(href) || /\/pack\//i.test(href) || isSameDomain(href)) return;
+    if (!href || a.dataset.bypassing || !RE_BYPASS.test(href) || /\/pack\//i.test(href)) return;
 
     e.preventDefault(); e.stopPropagation();
     const restore = showStatus(a, "⏳ Connecting…", href);

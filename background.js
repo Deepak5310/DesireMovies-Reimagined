@@ -9,12 +9,12 @@ const bypassCache = new Map();
 const activeBypasses = new Map();
 const CACHE_TTL = 3 * 3600 * 1000; // 3 Hours
 
-const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|gdflix|goflix|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
-const RE_STREAM = /href=["']?(https?:\/\/[^"'\s>]+(?:busycdn|fastcdn|cloud-dl|workers(?:\.dev)?|cloudflarestorage|pixeldrain)[^"'\s>]*)/i;
-const RE_CLOUD = /href=["']?([^"'\s>]*(?:\/cloud\/|\/video\/)[^"'\s>]+)/i;
-const RE_HUB = /href=["']?(https?:\/\/[^"'\s>]*(?:hubcloud|hubdrive)[^"'\s>]*)/i;
-const RE_GDFLIX = /href=["']?(https?:\/\/[^"'\s>]*(?:gdflix|goflix)[^"'\s>]*)/i;
-const RE_GATEWAY = /href=["']?(https?:\/\/[^"'\s>]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s>]*)/i;
+const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
+const RE_STREAM = /href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers(?:\.dev)?|cloudflarestorage|pixeldrain)[^"']+)["']/i;
+const RE_CLOUD = /href=["']([^"']*\/(?:cloud)\/[^"'\s]+)["']/i;
+const RE_HUB = /href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['"]/i;
+const RE_GDFLIX = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
+const RE_GATEWAY = /href=["'](https?:\/\/[^"'\s]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s]*)['"]/i;
 
 // Cache restoration & session persistence
 const ready = chrome.storage.session.get(["bypassCache"]).then(({ bypassCache: c }) => {
@@ -53,19 +53,6 @@ async function fetchFinalUrl(url, ms = 15000) {
   }
 }
 
-function sanitizeUrl(url) {
-  if (!url || typeof url !== "string") return url;
-  return url.replace(/\.(mkv|mp4|avi|webm|mov|m4v)\.zip(\?|$)/i, ".$1$2");
-}
-
-function extractStreamUrl(html) {
-  if (!html) return null;
-  const matches = [...html.matchAll(new RegExp(RE_STREAM.source, "gi"))].map((m) => m[1].replace(/&amp;/g, "&"));
-  if (!matches.length) return null;
-  const nonZip = matches.find((u) => !/\.zip(?:\?|$)/i.test(u));
-  return nonZip || matches[0];
-}
-
 function isDirectMedia(url) {
   if (!url || typeof url !== "string") return false;
   if (/workers\.dev|cloudflarestorage|googleusercontent\.com|pixeldrain\.com\/api\/file\//i.test(url)) return true;
@@ -84,7 +71,7 @@ async function resolveCloudWorker(html, baseUrl) {
   try {
     const cloudUrl = match[1].startsWith("http") ? match[1] : `${new URL(baseUrl).origin}${match[1]}`;
     const pageHtml = await fetchHTML(cloudUrl);
-    return extractStreamUrl(pageHtml);
+    return pageHtml.match(RE_STREAM)?.[1] || null;
   } catch {
     return null;
   }
@@ -92,7 +79,7 @@ async function resolveCloudWorker(html, baseUrl) {
 
 async function resolveGDFlix(html, pageUrl, onProgress) {
   onProgress?.("⏳ Searching GDFlix stream…");
-  let direct = (await resolveCloudWorker(html, pageUrl)) || extractStreamUrl(html);
+  let direct = (await resolveCloudWorker(html, pageUrl)) || html.match(RE_STREAM)?.[1];
   if (!direct) throw new Error("Stream link not found on GDFlix");
 
   onProgress?.("⏳ Preparing direct stream URL…");
@@ -103,7 +90,7 @@ async function resolveGDFlix(html, pageUrl, onProgress) {
     onProgress?.(`⏳ Resolving mirror (${new URL(finalUrl).hostname})…`);
     try {
       const page = await fetchHTML(finalUrl);
-      const stream = (await resolveCloudWorker(page, finalUrl)) || extractStreamUrl(page);
+      const stream = (await resolveCloudWorker(page, finalUrl)) || page.match(RE_STREAM)?.[1];
       if (stream) finalUrl = await fetchFinalUrl(stream.replace(/&amp;/g, "&"));
       else break;
     } catch {
@@ -117,7 +104,7 @@ async function resolveGDFlix(html, pageUrl, onProgress) {
       try { finalUrl = await fetchFinalUrl(worker.replace(/&amp;/g, "&")); } catch {}
     }
   }
-  return encodeURI(sanitizeUrl(finalUrl));
+  return encodeURI(finalUrl);
 }
 
 async function resolveHubCloud(hubUrl, onProgress) {
@@ -131,15 +118,14 @@ async function resolveHubCloud(hubUrl, onProgress) {
     } catch {}
   }
   const html = await fetchHTML(current);
-  const direct = extractStreamUrl(html);
-  if (direct) return sanitizeUrl(direct);
+  const direct = html.match(RE_STREAM);
+  if (direct) return direct[1];
 
   const gateway = html.match(RE_GATEWAY);
   if (gateway) {
     onProgress?.("⏳ Resolving gateway link…");
     const gHtml = await fetchHTML(gateway[1]);
-    const gStream = extractStreamUrl(gHtml);
-    if (gStream) return sanitizeUrl(gStream);
+    return gHtml.match(RE_STREAM)?.[1] || null;
   }
   return null;
 }
@@ -182,11 +168,8 @@ async function resolveFullChain(url, onProgress) {
     let html = await fetchHTML(url);
     if (html.includes("<input")) {
       const body = new URLSearchParams();
-      for (const tagMatch of html.matchAll(/<input[^>]+>/gi)) {
-        const tag = tagMatch[0];
-        const name = tag.match(/name=["']([^"']+)["']/i)?.[1];
-        const val = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? "";
-        if (name) body.append(name, val);
+      for (const m of html.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]*value=["']([^"']*)["']/gi)) {
+        body.append(m[1], m[2]);
       }
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
       html = await res.text();
@@ -199,20 +182,9 @@ async function resolveFullChain(url, onProgress) {
       const gd = html.match(RE_GDFLIX);
       if (gd) finalUrl = await resolveGDFlix(await fetchHTML(gd[1]), gd[1], onProgress);
     }
-    if (!finalUrl) {
-      const gw = html.match(RE_GATEWAY);
-      if (gw) {
-        try { finalUrl = await resolveHubCloud(gw[1], onProgress); } catch {}
-      }
-    }
-    if (!finalUrl) {
-      const direct = extractStreamUrl(html);
-      if (direct) finalUrl = sanitizeUrl(await fetchFinalUrl(direct));
-    }
   }
 
   if (!finalUrl) throw new Error("Could not resolve final download URL");
-  finalUrl = sanitizeUrl(finalUrl);
   bypassCache.set(url, { downloadUrl: finalUrl, ts: Date.now() });
   persistState();
   return { success: true, downloadUrl: finalUrl };
@@ -316,11 +288,10 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 const WORD_MAP = { "4k": "4K", "web-dl": "WEB-DL", "webdl": "WEB-DL", "web-hdrip": "WEB-HDRip", "bluray": "BluRay", "webrip": "WEB-Rip", "uhd": "UHD" };
 
 function cleanFilename(filename) {
-  let name = filename.replace(/\.(mkv|mp4|avi|webm|mov|m4v)\.zip$/i, ".$1");
-  const dotIdx = name.lastIndexOf(".");
-  if (dotIdx === -1) return name;
-  const ext = name.slice(dotIdx);
-  let base = name.slice(0, dotIdx).replace(/\s*\(\d+\)$/, "").replace(/[\[\]\(\)\{\}]/g, " ");
+  const dotIdx = filename.lastIndexOf(".");
+  if (dotIdx === -1) return filename;
+  const ext = filename.slice(dotIdx);
+  let base = filename.slice(0, dotIdx).replace(/\s*\(\d+\)$/, "").replace(/[\[\]\(\)\{\}]/g, " ");
   let epTag = "";
 
   base = base.replace(/^EP((\.\d+)+)\./i, (_, grp) => {
