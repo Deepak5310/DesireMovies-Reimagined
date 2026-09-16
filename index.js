@@ -1,3 +1,4 @@
+import http from "node:http";
 import { Bot, InlineKeyboard } from "grammy";
 import { config } from "./config.js";
 import { PostTracker } from "./tracker.js";
@@ -202,8 +203,18 @@ async function startTrackerLoop() {
   setInterval(poll, config.pollInterval * 1000);
 }
 
-// Start bot if executed directly
+// Start bot & health check server if executed directly
 if (process.argv[1]?.endsWith("index.js")) {
+  const PORT = process.env.PORT || 3000;
+  http
+    .createServer((req, res) => {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("DesireMovies Telegram Bot is running!\n");
+    })
+    .listen(PORT, () => {
+      console.log(`🌐 Health-check server listening on port ${PORT}`);
+    });
+
   bot.catch((err) => console.error("[Bot Error]", err));
   bot.start({
     onStart: () => {
