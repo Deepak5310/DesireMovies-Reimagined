@@ -6,16 +6,22 @@ const HEADERS = {
 };
 
 const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
+const RE_IMDB = /imdb:\s*([0-9.]+\s*\/\s*10|[0-9.]+)/i;
+const RE_AUDIO = /language:\s*([^:\n]+?)(?=\s*(?:all genres?|genres?|quality|format|size|stars?|director|plot|imdb|\-:|$))/i;
+const RE_GENRE = /(?:genres?|all genres?):\s*([^:\n]+?)(?=\s*(?:plot|storyline|director|stars?|language|quality|\-:|$))/i;
+const RE_PLOT = /(?:plot|storyline):\s*([^:\n]+?)(?=\s*(?:\-:|screenshots?|trailer|download|$))/i;
+const RE_SIZE = /\[?(\d+(?:\.\d+)?\s*(?:GB|MB))\]?/i;
+const RE_EP_MATCH = /(?:ep|episode|e)\s*(\d{1,3})(?:\s*to\s*(\d{1,3}))?/i;
 
 export function parseTitle(raw) {
   if (!raw) return { cleanName: "Unknown", year: "", season: "", displayTitle: "Unknown" };
-  let title = raw.replace(/^Download\s+/i, "");
+  const title = raw.replace(/^Download\s+/i, "");
   const yearMatch = title.match(/\((19\d\d|20\d\d)\)/);
   const year = yearMatch ? yearMatch[1] : "";
   const seasonMatch = title.match(/\[?(?:Season|S)\s*(\d{1,2})\]?/i);
   const season = seasonMatch ? `Season ${seasonMatch[1]}` : "";
 
-  let cleanName = title
+  const cleanName = title
     .replace(/\((?:19|20)\d\d\).*/i, "")
     .replace(/\[?(?:Season|S)\s*\d+\]?.*/i, "")
     .replace(/WEB-HDRip|WEB-DL|BluRay|HDTV|HDRip|x264|x265|HEVC|Dual Audio|Hindi|Esubs|ORG|DD\s*5\.1|480p|720p|1080p|4K|2160p/gi, "")
@@ -32,49 +38,30 @@ export function parseTitle(raw) {
 }
 
 export async function scrapePost(postUrl) {
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), 20000);
-  let html = "";
-  try {
-    const res = await fetch(postUrl, { headers: HEADERS, signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status} fetching post`);
-    html = await res.text();
-  } finally {
-    clearTimeout(tid);
-  }
+  const res = await fetch(postUrl, { headers: HEADERS, signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching post`);
+  const html = await res.text();
 
   const $ = cheerio.load(html);
   const host = new URL(postUrl).hostname;
-
-  // Title
   const title = $("h1.entry-title, h1.post-title, h1").first().text().trim() || $("title").text().trim();
 
-  // Poster Image
   let poster = $('meta[property="og:image"]').attr("content") ||
     $(".entry-content img, .post-body img, article img").first().attr("src") || "";
   if (poster && !poster.startsWith("http")) {
     try { poster = new URL(poster, postUrl).href; } catch {}
   }
 
-  // Extract Clean Metadata
   let imdb = "", audio = "", genre = "", plot = "";
   $(".entry-content, .post-body, article").find("p, div").each((_, el) => {
     const text = $(el).text().replace(/\s+/g, " ");
-    if (!imdb && /imdb:\s*([0-9.]+\s*\/\s*10|[0-9.]+)/i.test(text)) imdb = text.match(/imdb:\s*([0-9.]+\s*\/\s*10|[0-9.]+)/i)[1];
-    if (!audio && /language:\s*([^:\n]+?)(?=\s*(?:all genres?|genres?|quality|format|size|stars?|director|plot|imdb|\-:|$))/i.test(text)) {
-      audio = text.match(/language:\s*([^:\n]+?)(?=\s*(?:all genres?|genres?|quality|format|size|stars?|director|plot|imdb|\-:|$))/i)[1].trim();
-    }
-    if (!genre && /(?:genres?|all genres?):\s*([^:\n]+?)(?=\s*(?:plot|storyline|director|stars?|language|quality|\-:|$))/i.test(text)) {
-      genre = text.match(/(?:genres?|all genres?):\s*([^:\n]+?)(?=\s*(?:plot|storyline|director|stars?|language|quality|\-:|$))/i)[1].trim();
-    }
-    if (!plot && /(?:plot|storyline):\s*([^:\n]+?)(?=\s*(?:\-:|screenshots?|trailer|download|$))/i.test(text)) {
-      plot = text.match(/(?:plot|storyline):\s*([^:\n]+?)(?=\s*(?:\-:|screenshots?|trailer|download|$))/i)[1].trim();
-    }
+    if (!imdb && RE_IMDB.test(text)) imdb = text.match(RE_IMDB)[1];
+    if (!audio && RE_AUDIO.test(text)) audio = text.match(RE_AUDIO)[1].trim();
+    if (!genre && RE_GENRE.test(text)) genre = text.match(RE_GENRE)[1].trim();
+    if (!plot && RE_PLOT.test(text)) plot = text.match(RE_PLOT)[1].trim();
   });
 
   const isSeries = /season|episode|episodes|s\d{1,2}|batch/i.test(title);
-
-  // Parse download links with context awareness
   const groups = [];
   const seenUrls = new Set();
   let currentEpisode = "";
@@ -93,8 +80,7 @@ export async function scrapePost(postUrl) {
 
       if (RE_BYPASS.test(href) || /download|drive|hub|gdflix|watch|stream/i.test(text)) {
         seenUrls.add(href);
-
-        const qual = currentQuality || detectQuality(text) || "Direct Link";
+        const qual = currentQuality || detectQuality(text) || "Download";
         const ep = isSeries ? (currentEpisode || detectEpisode(text) || "") : "";
         const label = formatButtonLabel(ep, qual, currentSize);
 
@@ -110,8 +96,7 @@ export async function scrapePost(postUrl) {
       return;
     }
 
-    // Context tracking for headings & paragraphs
-    if (/(?:^|\s)(?:ep|episode|e)\s*\d+/i.test(text) || /ep\s*\d+\s*to\s*\d+/i.test(text) || /zip\s*pack|full\s*season/i.test(text)) {
+    if (RE_EP_MATCH.test(text) || /zip\s*pack|full\s*season/i.test(text)) {
       const epMatch = text.match(/(?:ep|episode|e)\s*\d+(?:\s*to\s*\d+)?/i) || text.match(/zip\s*pack|full\s*season/i);
       if (epMatch) currentEpisode = epMatch[0].toUpperCase().replace(/\s*TO\s*/i, "-");
     }
@@ -119,7 +104,7 @@ export async function scrapePost(postUrl) {
     const q = detectQuality(text);
     if (q) currentQuality = q;
 
-    const sizeMatch = text.match(/\[?(\d+(?:\.\d+)?\s*(?:GB|MB))\]?/i);
+    const sizeMatch = text.match(RE_SIZE);
     if (sizeMatch) currentSize = sizeMatch[1].toUpperCase();
   });
 
@@ -134,13 +119,10 @@ export async function scrapePost(postUrl) {
 }
 
 function formatButtonLabel(episode, quality, size) {
-  let ep = episode ? episode.replace(/\s*TO\s*/i, "-").replace(/^EPISODE\s*/i, "EP ").replace(/^EP\s*0?(\d+)/i, "EP $1") : "";
-  let qual = quality || "Download";
-  let sz = size ? ` (${size.replace(/\s+/g, "")})` : "";
-  if (ep) {
-    return `${ep} • ${qual}${sz}`;
-  }
-  return `${qual}${sz}`;
+  const ep = episode ? episode.replace(/\s*TO\s*/i, "-").replace(/^EPISODE\s*/i, "EP ").replace(/^EP\s*0?(\d+)/i, "EP $1") : "";
+  const qual = quality || "Download";
+  const sz = size ? ` (${size.replace(/\s+/g, "")})` : "";
+  return ep ? `${ep} • ${qual}${sz}` : `${qual}${sz}`;
 }
 
 function detectQuality(str) {

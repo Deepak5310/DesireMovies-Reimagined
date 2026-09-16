@@ -23,9 +23,10 @@ export function escapeHtml(text) {
 export async function formatPostMessage(postData, autoResolve = true) {
   const { displayTitle, season } = parseTitle(postData.title);
 
-  const lines = [];
-  lines.push(`🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`);
-  lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+  const lines = [
+    `🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+  ];
 
   const metaItems = [];
   if (postData.isSeries || season) {
@@ -48,15 +49,14 @@ export async function formatPostMessage(postData, autoResolve = true) {
   lines.push(`━━━━━━━━━━━━━━━━━━━━`);
   lines.push(`⚡ <b>${postData.isSeries ? "Direct Episode Downloads" : "Select Download Quality"}:</b>`);
 
-  // Parallel bypass resolution
   const resolvedGroups = await Promise.all(
     postData.groups.map(async (item) => {
-      if (!autoResolve) return { ...item, directUrl: item.url, label: item.label };
+      if (!autoResolve) return { ...item, directUrl: item.url };
       try {
         const direct = await resolveBypass(item.url);
-        return { ...item, directUrl: direct || item.url, label: item.label };
+        return { ...item, directUrl: direct || item.url };
       } catch {
-        return { ...item, directUrl: item.url, label: item.label };
+        return { ...item, directUrl: item.url };
       }
     })
   );
@@ -109,6 +109,45 @@ export async function broadcastPost(chatId, postUrl) {
   }
 }
 
+// Helpers for interactive commands & message handling
+async function handlePublishPost(ctx, url) {
+  const targetChat = config.channelId || ctx.chat.id;
+  const waitMsg = await ctx.reply("⏳ Scraping post, resolving direct links & publishing…");
+  try {
+    const postData = await broadcastPost(targetChat, url);
+    if (!postData) {
+      return ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, "⚠️ No download links found in this post.");
+    }
+    const { displayTitle } = parseTitle(postData.title);
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      waitMsg.message_id,
+      `✅ <b>Successfully published to ${config.channelId ? "Channel" : "Chat"}!</b>\n\n🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`,
+      { parse_mode: "HTML" }
+    );
+  } catch (err) {
+    await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ Failed: ${escapeHtml(err.message)}`);
+  }
+}
+
+async function handleBypassLink(ctx, url) {
+  const waitMsg = await ctx.reply("⏳ Bypassing link, please wait…");
+  try {
+    const directUrl = await resolveBypass(url);
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      waitMsg.message_id,
+      `✅ <b>Direct Download Link:</b>\n\n<code>${escapeHtml(directUrl)}</code>`,
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard().url("📥 Direct Download / Stream", directUrl),
+      }
+    );
+  } catch (err) {
+    await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ Bypass Failed: ${escapeHtml(err.message)}`);
+  }
+}
+
 // Bot Commands
 bot.command("start", (ctx) => {
   ctx.reply(
@@ -117,12 +156,10 @@ bot.command("start", (ctx) => {
       `⏱ <b>Check Interval:</b> ${config.pollInterval}s\n` +
       `⚡ <b>Auto Bypass:</b> ${config.autoResolve ? "Enabled" : "Disabled"}\n\n` +
       `<b>How to use:</b>\n` +
-      `• <b>Post to Channel:</b> Just send any old movie/series post link directly in this chat!\n` +
-      `• <b>Direct Bypass:</b> Send any gateway link (HubCloud, KMHD, GDFlix) to get direct download.\n\n` +
-      `<b>Available Commands:</b>\n` +
-      `• /post &lt;url&gt; - Manually fetch & publish post to channel\n` +
-      `• /bypass &lt;url&gt; - Bypass single download link\n` +
-      `• /check - Trigger immediate scan for new releases\n` +
+      `• <b>Publish Post:</b> Send any movie/series URL directly in this chat or use <code>/post &lt;url&gt;</code>\n` +
+      `• <b>Bypass Link:</b> Send any gateway link (HubCloud, KMHD, GDFlix) or use <code>/bypass &lt;url&gt;</code>\n\n` +
+      `<b>Commands:</b>\n` +
+      `• /check - Scan for latest releases immediately\n` +
       `• /status - Show current tracking status`,
     { parse_mode: "HTML" }
   );
@@ -139,62 +176,23 @@ bot.command("status", (ctx) => {
   );
 });
 
-bot.command("bypass", async (ctx) => {
+bot.command("bypass", (ctx) => {
   const url = ctx.match?.trim();
-  if (!url) {
-    return ctx.reply("⚠️ Usage: <code>/bypass https://link...</code>", { parse_mode: "HTML" });
-  }
-
-  const waitMsg = await ctx.reply("⏳ Bypassing link, please wait…");
-  try {
-    const directUrl = await resolveBypass(url);
-    await ctx.api.editMessageText(
-      ctx.chat.id,
-      waitMsg.message_id,
-      `✅ <b>Direct Download Link:</b>\n\n<code>${escapeHtml(directUrl)}</code>`,
-      {
-        parse_mode: "HTML",
-        reply_markup: new InlineKeyboard().url("📥 Direct Download / Stream", directUrl),
-      }
-    );
-  } catch (err) {
-    await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ <b>Bypass Failed:</b> ${escapeHtml(err.message)}`, {
-      parse_mode: "HTML",
-    });
-  }
+  if (!url) return ctx.reply("⚠️ Usage: <code>/bypass https://link...</code>", { parse_mode: "HTML" });
+  return handleBypassLink(ctx, url);
 });
 
-bot.command("post", async (ctx) => {
-  const postUrl = ctx.match?.trim();
-  if (!postUrl) {
-    return ctx.reply("⚠️ Usage: <code>/post https://desiremovies.../post-slug/</code>\n\n💡 <i>Or simply send the link directly in this chat!</i>", { parse_mode: "HTML" });
-  }
-
-  const targetChat = config.channelId || ctx.chat.id;
-  const waitMsg = await ctx.reply("⏳ Scraping, resolving download links & publishing…");
-  try {
-    const postData = await broadcastPost(targetChat, postUrl);
-    if (!postData) {
-      return ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, "⚠️ No download links found in this post.");
-    }
-    const { displayTitle } = parseTitle(postData.title);
-    await ctx.api.editMessageText(
-      ctx.chat.id,
-      waitMsg.message_id,
-      `✅ <b>Successfully published to ${config.channelId ? "Channel" : "Chat"}!</b>\n\n🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`,
-      { parse_mode: "HTML" }
-    );
-  } catch (err) {
-    await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ Failed: ${escapeHtml(err.message)}`);
-  }
+bot.command("post", (ctx) => {
+  const url = ctx.match?.trim();
+  if (!url) return ctx.reply("⚠️ Usage: <code>/post https://desiremovies.../post-slug/</code>\n\n💡 <i>Or simply send the link directly in this chat!</i>", { parse_mode: "HTML" });
+  return handlePublishPost(ctx, url);
 });
 
 bot.command("check", async (ctx) => {
   await ctx.reply("🔍 Checking for new posts…");
   const newPosts = await tracker.getNewPosts();
-  if (!newPosts.length) {
-    return ctx.reply("✅ No new posts found right now.");
-  }
+  if (!newPosts.length) return ctx.reply("✅ No new posts found right now.");
+
   await ctx.reply(`🎉 Found ${newPosts.length} new post(s)! Publishing…`);
   const targetChat = config.channelId || ctx.chat.id;
   for (const post of newPosts) {
@@ -202,52 +200,19 @@ bot.command("check", async (ctx) => {
   }
 });
 
-// Auto-handle direct links sent in chat
+// Auto-handle URLs sent directly as messages
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text.trim();
-  if (text.startsWith("/")) return; // Handled by command handlers
+  if (text.startsWith("/")) return;
 
   const urlMatch = text.match(/https?:\/\/[^\s]+/i);
   if (!urlMatch) return;
 
   const url = urlMatch[0];
-  const isDesirePost = /desiremovies/i.test(url);
-  const isBypassLink = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i.test(url);
-
-  if (isDesirePost) {
-    const targetChat = config.channelId || ctx.chat.id;
-    const waitMsg = await ctx.reply("⏳ Scraping post, resolving direct links & publishing to channel…");
-    try {
-      const postData = await broadcastPost(targetChat, url);
-      if (!postData) {
-        return ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, "⚠️ No download links found in this post.");
-      }
-      const { displayTitle } = parseTitle(postData.title);
-      await ctx.api.editMessageText(
-        ctx.chat.id,
-        waitMsg.message_id,
-        `✅ <b>Successfully published to ${config.channelId ? "Channel" : "Chat"}!</b>\n\n🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`,
-        { parse_mode: "HTML" }
-      );
-    } catch (err) {
-      await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ Failed: ${escapeHtml(err.message)}`);
-    }
-  } else if (isBypassLink) {
-    const waitMsg = await ctx.reply("⏳ Bypassing link, please wait…");
-    try {
-      const directUrl = await resolveBypass(url);
-      await ctx.api.editMessageText(
-        ctx.chat.id,
-        waitMsg.message_id,
-        `✅ <b>Direct Download Link:</b>\n\n<code>${escapeHtml(directUrl)}</code>`,
-        {
-          parse_mode: "HTML",
-          reply_markup: new InlineKeyboard().url("📥 Direct Download / Stream", directUrl),
-        }
-      );
-    } catch (err) {
-      await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ Bypass Failed: ${escapeHtml(err.message)}`);
-    }
+  if (/desiremovies/i.test(url)) {
+    await handlePublishPost(ctx, url);
+  } else if (/^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i.test(url)) {
+    await handleBypassLink(ctx, url);
   }
 });
 

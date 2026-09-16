@@ -29,27 +29,15 @@ function extractStreamUrl(html) {
 }
 
 async function fetchHTML(url, opts = {}, ms = 15000) {
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const res = await fetch(url, { ...opts, headers: { ...HEADERS, ...opts.headers }, signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status} on ${new URL(url).hostname}`);
-    return await res.text();
-  } finally {
-    clearTimeout(tid);
-  }
+  const res = await fetch(url, { ...opts, headers: { ...HEADERS, ...opts.headers }, signal: AbortSignal.timeout(ms) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on ${new URL(url).hostname}`);
+  return await res.text();
 }
 
 async function fetchFinalUrl(url, ms = 15000) {
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const res = await fetch(url, { headers: HEADERS, signal: ctrl.signal });
-    const target = new URL(res.url).searchParams.get("url") || res.url;
-    return sanitizeUrl(target);
-  } finally {
-    clearTimeout(tid);
-  }
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(ms) });
+  const target = new URL(res.url).searchParams.get("url") || res.url;
+  return sanitizeUrl(target);
 }
 
 function isDirectMedia(url) {
