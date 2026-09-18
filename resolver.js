@@ -26,13 +26,19 @@ function extractStreamUrl(html) {
   // 1. Check for real JS pxl variable (bypasses HubCloud negn6f anti-bot decoy)
   const pxlVar = html.match(/var\s+pxl\s*=\s*["'](https?:\/\/[^"']+)["']/i);
   if (pxlVar && !/negn6f/i.test(pxlVar[1])) {
+    const code = pxlVar[1].match(/\/u\/([a-zA-Z0-9_-]+)/)?.[1];
+    if (code) return `https://pixeldrain.dev/api/file/${code}`;
     return pxlVar[1];
   }
 
   // 2. Check for direct CDN / worker streams
   const matches = [...html.matchAll(new RegExp(RE_STREAM.source, "gi"))]
     .map((m) => m[1].replace(/&amp;/g, "&"))
-    .filter((u) => !/negn6f|sample|preview/i.test(u));
+    .filter((u) => !/negn6f|sample|preview/i.test(u))
+    .map((u) => {
+      const pxlCode = u.match(/(?:pixeldrain\.com|pixeldrain\.dev)\/u\/([a-zA-Z0-9_-]+)/i)?.[1];
+      return pxlCode ? `https://pixeldrain.dev/api/file/${pxlCode}` : u;
+    });
 
   if (!matches.length) return null;
   const nonZip = matches.find((u) => !/\.zip(?:\?|$)/i.test(u));
@@ -109,7 +115,28 @@ async function resolveHubCloud(hubUrl) {
 
   const gateway = html.match(RE_GATEWAY);
   if (gateway) {
-    const gHtml = await fetchHTML(gateway[1]);
+    const gUrl = gateway[1];
+    const gHtml = await fetchHTML(gUrl);
+
+    // 1. Try 10Gbps Server link (Google Video stream or Cloudflare Worker)
+    const gpdlMatch = gHtml.match(/href=["'](https?:\/\/[^"'\s]*gpdl\.[^"'\s]*)["']/i);
+    if (gpdlMatch) {
+      try {
+        const gpdlRes = await fetch(gpdlMatch[1], {
+          headers: { ...HEADERS, Referer: gUrl },
+          redirect: "follow",
+          signal: AbortSignal.timeout(10000),
+        });
+        const linkParam = new URL(gpdlRes.url).searchParams.get("link");
+        if (linkParam && linkParam.startsWith("http")) {
+          return sanitizeUrl(linkParam);
+        }
+        if (/workers\.dev|cloudflarestorage|googleusercontent/i.test(gpdlRes.url)) {
+          return sanitizeUrl(gpdlRes.url);
+        }
+      } catch {}
+    }
+
     const gDirect = extractStreamUrl(gHtml);
     return gDirect ? sanitizeUrl(gDirect) : null;
   }
