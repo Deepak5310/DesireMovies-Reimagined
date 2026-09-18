@@ -39,6 +39,7 @@ npm run dev
 ## 🤖 Bot Commands
 
 - `/start` - Welcome message and usage instructions.
+- `/search <query>` - Search movies & TV series with 1-click publish/download buttons.
 - `/status` - View current tracked site, channel, and cached posts count.
 - `/post <url>` - Manually scrape and broadcast a post to the channel.
 - `/bypass <url>` - Resolve a single download/stream link.

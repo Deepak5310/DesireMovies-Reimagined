@@ -2,7 +2,7 @@ import http from "node:http";
 import { Bot, InlineKeyboard } from "grammy";
 import { config } from "./config.js";
 import { PostTracker } from "./tracker.js";
-import { scrapePost, parseTitle } from "./scraper.js";
+import { scrapePost, parseTitle, searchPosts } from "./scraper.js";
 import { resolveBypass } from "./resolver.js";
 
 if (!config.botToken) {
@@ -12,6 +12,19 @@ if (!config.botToken) {
 
 export const bot = new Bot(config.botToken);
 export const tracker = new PostTracker(config.siteUrl);
+
+// URL cache for callback queries (ensures data stays <= 64 bytes)
+const searchUrlMap = new Map();
+let searchCounter = 1;
+function registerSearchUrl(url) {
+  const id = (searchCounter++).toString(36);
+  searchUrlMap.set(id, url);
+  if (searchUrlMap.size > 200) {
+    const oldestKey = searchUrlMap.keys().next().value;
+    searchUrlMap.delete(oldestKey);
+  }
+  return id;
+}
 
 export function escapeHtml(text) {
   return (text || "")
@@ -148,17 +161,59 @@ async function handleBypassLink(ctx, url) {
   }
 }
 
+async function handleSearch(ctx, query) {
+  const waitMsg = await ctx.reply(`🔍 Searching for "<b>${escapeHtml(query)}</b>"…`, { parse_mode: "HTML" });
+  try {
+    const results = await searchPosts(query, tracker.siteUrl || config.siteUrl);
+    if (!results.length) {
+      return ctx.api.editMessageText(
+        ctx.chat.id,
+        waitMsg.message_id,
+        `❌ No results found for "<b>${escapeHtml(query)}</b>". Try another search term.`,
+        { parse_mode: "HTML" }
+      );
+    }
+
+    const lines = [`🔍 <b>Search Results for:</b> "<i>${escapeHtml(query)}</i>"\n`];
+    const keyboard = new InlineKeyboard();
+
+    results.slice(0, 5).forEach((item, idx) => {
+      const num = idx + 1;
+      const sInfo = item.season ? ` • <i>${escapeHtml(item.season)}</i>` : "";
+      lines.push(`<b>${num}.</b> <b>${escapeHtml(item.displayTitle || item.rawTitle)}</b>${sInfo}`);
+
+      const postKey = registerSearchUrl(item.url);
+      keyboard
+        .text(`📢 Post #${num}`, `pub:${postKey}`)
+        .text(`⚡ Get Links #${num}`, `get:${postKey}`)
+        .row();
+    });
+
+    lines.push(`\n━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`👇 <i>Click <b>📢 Post</b> to broadcast to channel or <b>⚡ Get Links</b> for DM!</i>`);
+
+    await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, lines.join("\n"), {
+      parse_mode: "HTML",
+      reply_markup: keyboard,
+    });
+  } catch (err) {
+    await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ Search error: ${escapeHtml(err.message)}`);
+  }
+}
+
 // Bot Commands
 bot.command("start", (ctx) => {
   ctx.reply(
     `👋 <b>Welcome to DesireMovies Bypass & Tracker Bot!</b>\n\n` +
-      `📌 <b>Monitored Site:</b> <code>${config.siteUrl}</code>\n` +
+      `📌 <b>Monitored Site:</b> <code>${tracker.siteUrl || config.siteUrl}</code>\n` +
       `⏱ <b>Check Interval:</b> ${config.pollInterval}s\n` +
       `⚡ <b>Auto Bypass:</b> ${config.autoResolve ? "Enabled" : "Disabled"}\n\n` +
       `<b>How to use:</b>\n` +
-      `• <b>Publish Post:</b> Send any movie/series URL directly in this chat or use <code>/post &lt;url&gt;</code>\n` +
-      `• <b>Bypass Link:</b> Send any gateway link (HubCloud, KMHD, GDFlix) or use <code>/bypass &lt;url&gt;</code>\n\n` +
+      `• <b>🔍 Search Movie/Series:</b> Simply send any movie name (e.g. <code>Panchayat</code>) or <code>/search &lt;name&gt;</code>\n` +
+      `• <b>📢 Publish URL:</b> Send any post link directly or use <code>/post &lt;url&gt;</code>\n` +
+      `• <b>⚡ Bypass Gateway:</b> Send any download gateway link or use <code>/bypass &lt;url&gt;</code>\n\n` +
       `<b>Commands:</b>\n` +
+      `• /search &lt;query&gt; - Search movies & TV series\n` +
       `• /check - Scan for latest releases immediately\n` +
       `• /status - Show current tracking status`,
     { parse_mode: "HTML" }
@@ -168,12 +223,18 @@ bot.command("start", (ctx) => {
 bot.command("status", (ctx) => {
   ctx.reply(
     `📊 <b>Bot Status:</b>\n` +
-      `• Site: <code>${config.siteUrl}</code>\n` +
+      `• Site: <code>${tracker.siteUrl || config.siteUrl}</code>\n` +
       `• Channel: <code>${config.channelId || "Not Set"}</code>\n` +
       `• Cached Posts: ${tracker.seenUrls.size}\n` +
       `• Auto-Resolve Direct Links: ${config.autoResolve ? "YES" : "NO"}`,
     { parse_mode: "HTML" }
   );
+});
+
+bot.command("search", (ctx) => {
+  const query = ctx.match?.trim();
+  if (!query) return ctx.reply("⚠️ Usage: <code>/search &lt;movie/series name&gt;</code>\n\n💡 <i>Or simply type the movie name directly!</i>", { parse_mode: "HTML" });
+  return handleSearch(ctx, query);
 });
 
 bot.command("bypass", (ctx) => {
@@ -200,20 +261,58 @@ bot.command("check", async (ctx) => {
   }
 });
 
-// Auto-handle URLs sent directly as messages
+// Callback queries for interactive search results
+bot.callbackQuery(/^pub:(.+)$/, async (ctx) => {
+  const id = ctx.match[1];
+  const url = searchUrlMap.get(id);
+  if (!url) {
+    return ctx.answerCallbackQuery({ text: "⚠️ Search result expired. Please search again!", show_alert: true });
+  }
+  await ctx.answerCallbackQuery({ text: "⏳ Scraping & publishing to channel..." });
+  const targetChat = config.channelId || ctx.chat.id;
+  try {
+    const postData = await broadcastPost(targetChat, url);
+    if (postData) {
+      const { displayTitle } = parseTitle(postData.title);
+      await ctx.reply(`✅ <b>Published to ${config.channelId ? "Channel" : "Chat"}!</b>\n\n🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`, { parse_mode: "HTML" });
+    }
+  } catch (err) {
+    await ctx.reply(`❌ Failed to publish: ${escapeHtml(err.message)}`);
+  }
+});
+
+bot.callbackQuery(/^get:(.+)$/, async (ctx) => {
+  const id = ctx.match[1];
+  const url = searchUrlMap.get(id);
+  if (!url) {
+    return ctx.answerCallbackQuery({ text: "⚠️ Search result expired. Please search again!", show_alert: true });
+  }
+  await ctx.answerCallbackQuery({ text: "⏳ Fetching direct download links..." });
+  try {
+    await broadcastPost(ctx.chat.id, url);
+  } catch (err) {
+    await ctx.reply(`❌ Failed to fetch links: ${escapeHtml(err.message)}`);
+  }
+});
+
+// Auto-handle URLs or Search queries sent as messages
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text.trim();
   if (text.startsWith("/")) return;
 
   const urlMatch = text.match(/https?:\/\/[^\s]+/i);
-  if (!urlMatch) return;
-
-  const url = urlMatch[0];
-  if (/desiremovies/i.test(url)) {
-    await handlePublishPost(ctx, url);
-  } else if (/^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i.test(url)) {
-    await handleBypassLink(ctx, url);
+  if (urlMatch) {
+    const url = urlMatch[0];
+    if (/desiremovies/i.test(url)) {
+      await handlePublishPost(ctx, url);
+    } else if (/^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i.test(url)) {
+      await handleBypassLink(ctx, url);
+    }
+    return;
   }
+
+  // Treat plain text message as a movie/series search query
+  await handleSearch(ctx, text);
 });
 
 // Automated Tracker Loop

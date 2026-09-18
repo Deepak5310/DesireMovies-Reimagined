@@ -142,3 +142,64 @@ function detectEpisode(str) {
   const m = str.match(/(?:ep|episode|e)\s*(\d{1,3})/i);
   return m ? `EP ${m[1]}` : "";
 }
+
+export async function searchPosts(query, siteUrl) {
+  if (!query || !query.trim()) return [];
+  const cleanQ = query.trim();
+  const origin = siteUrl.replace(/\/+$/, "");
+
+  // 1. Try HTML search page /search/<query>/
+  try {
+    const searchUrl = `${origin}/search/${encodeURIComponent(cleanQ)}/`;
+    const res = await fetch(searchUrl, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      const results = [];
+      const seen = new Set();
+
+      $("article, .post-item, .latest-post, .thumb").each((_, el) => {
+        const a = $(el).find("a[href]").first();
+        const href = a.attr("href");
+        const rawTitle = $(el).find(".entry-title, h2, h3").text().trim() || a.attr("title") || a.text().trim();
+        if (href && rawTitle && !seen.has(href)) {
+          try {
+            const u = new URL(href, origin);
+            if (!/category|tag|page|author/i.test(u.pathname)) {
+              seen.add(href);
+              const parsed = parseTitle(rawTitle);
+              results.push({
+                rawTitle,
+                url: u.href,
+                ...parsed,
+              });
+            }
+          } catch {}
+        }
+      });
+      if (results.length > 0) return results.slice(0, 6);
+    }
+  } catch {}
+
+  // 2. Fallback: WP REST API
+  try {
+    const apiUrl = `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(cleanQ)}&per_page=6`;
+    const res = await fetch(apiUrl, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const items = await res.json();
+      if (Array.isArray(items) && items.length > 0) {
+        return items.map((item) => {
+          const rawTitle = cheerio.load(item.title?.rendered || "").text();
+          const parsed = parseTitle(rawTitle);
+          return {
+            rawTitle,
+            url: item.link,
+            ...parsed,
+          };
+        });
+      }
+    }
+  } catch {}
+
+  return [];
+}
