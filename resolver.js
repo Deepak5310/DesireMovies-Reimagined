@@ -22,7 +22,18 @@ export function sanitizeUrl(url) {
 
 function extractStreamUrl(html) {
   if (!html) return null;
-  const matches = [...html.matchAll(new RegExp(RE_STREAM.source, "gi"))].map((m) => m[1].replace(/&amp;/g, "&"));
+
+  // 1. Check for real JS pxl variable (bypasses HubCloud negn6f anti-bot decoy)
+  const pxlVar = html.match(/var\s+pxl\s*=\s*["'](https?:\/\/[^"']+)["']/i);
+  if (pxlVar && !/negn6f/i.test(pxlVar[1])) {
+    return pxlVar[1];
+  }
+
+  // 2. Check for direct CDN / worker streams
+  const matches = [...html.matchAll(new RegExp(RE_STREAM.source, "gi"))]
+    .map((m) => m[1].replace(/&amp;/g, "&"))
+    .filter((u) => !/negn6f|sample|preview/i.test(u));
+
   if (!matches.length) return null;
   const nonZip = matches.find((u) => !/\.zip(?:\?|$)/i.test(u));
   return nonZip || matches[0];
@@ -149,7 +160,21 @@ export async function resolveBypass(url) {
     }
     if (!finalUrl) {
       const gd = html.match(RE_GDFLIX);
-      if (gd) finalUrl = await resolveGDFlix(await fetchHTML(gd[1]), gd[1]);
+      if (gd) {
+        try { finalUrl = await resolveGDFlix(await fetchHTML(gd[1]), gd[1]); } catch {}
+      }
+    }
+    if (!finalUrl) {
+      const pxl = html.match(/href=["'](https?:\/\/(?:pixeldrain\.com|pixeldrain\.dev)\/u\/[a-zA-Z0-9_-]+)["']/i);
+      if (pxl && !/negn6f/i.test(pxl[1])) finalUrl = pxl[1];
+    }
+    if (!finalUrl) {
+      const gof = html.match(/href=["'](https?:\/\/gofile\.io\/d\/[a-zA-Z0-9_-]+)["']/i);
+      if (gof) finalUrl = gof[1];
+    }
+    if (!finalUrl) {
+      const ocf = html.match(/href=["'](https?:\/\/1cloudfile\.com\/[a-zA-Z0-9_-]+)["']/i);
+      if (ocf) finalUrl = ocf[1];
     }
   }
 
