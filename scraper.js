@@ -5,7 +5,7 @@ const HEADERS = {
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 };
 
-const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
+const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse|techmukul|hqmovies|fastdl|filepress|droplink|sharespark|drive|link)/i;
 const RE_IMDB = /imdb:\s*([0-9.]+\s*\/\s*10|[0-9.]+)/i;
 const RE_AUDIO = /language:\s*([^:\n]+?)(?=\s*(?:all genres?|genres?|quality|format|size|stars?|director|plot|imdb|\-:|$))/i;
 const RE_GENRE = /(?:genres?|all genres?):\s*([^:\n]+?)(?=\s*(?:plot|storyline|director|stars?|language|quality|\-:|$))/i;
@@ -76,9 +76,15 @@ export async function scrapePost(postUrl) {
     if (tag === "a") {
       const href = $(el).attr("href")?.trim();
       if (!href || !href.startsWith("http") || seenUrls.has(href)) return;
+      if (/telegram|t\.me|mhthemes|wordpress|facebook|twitter|instagram|youtube/i.test(href)) return;
+
       try { if (new URL(href).hostname === host) return; } catch { return; }
 
-      if (RE_BYPASS.test(href) || /download|drive|hub|gdflix|watch|stream/i.test(text)) {
+      if (
+        RE_BYPASS.test(href) ||
+        /download|drive|hub|gdflix|watch|stream|click\s*here|links?|get\s*link/i.test(text) ||
+        /view|file|download/i.test(href)
+      ) {
         seenUrls.add(href);
         const qual = currentQuality || detectQuality(text) || "Download";
         const ep = isSeries ? (currentEpisode || detectEpisode(text) || "") : "";
@@ -163,6 +169,9 @@ export async function searchPosts(query, siteUrl) {
         const href = a.attr("href");
         const rawTitle = $(el).find(".entry-title, h2, h3").text().trim() || a.attr("title") || a.text().trim();
         if (href && rawTitle && !seen.has(href)) {
+          // Filter out 1xbet / spam single episode ads
+          if (/1xbet|4rabet|advert|promo/i.test(rawTitle)) return;
+
           try {
             const u = new URL(href, origin);
             if (!/category|tag|page|author/i.test(u.pathname)) {
@@ -183,20 +192,23 @@ export async function searchPosts(query, siteUrl) {
 
   // 2. Fallback: WP REST API
   try {
-    const apiUrl = `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(cleanQ)}&per_page=6`;
+    const apiUrl = `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(cleanQ)}&per_page=8`;
     const res = await fetch(apiUrl, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
     if (res.ok) {
       const items = await res.json();
       if (Array.isArray(items) && items.length > 0) {
-        return items.map((item) => {
-          const rawTitle = cheerio.load(item.title?.rendered || "").text();
-          const parsed = parseTitle(rawTitle);
-          return {
-            rawTitle,
-            url: item.link,
-            ...parsed,
-          };
-        });
+        return items
+          .filter((item) => !/1xbet|4rabet|advert|promo/i.test(item.title?.rendered || ""))
+          .slice(0, 6)
+          .map((item) => {
+            const rawTitle = cheerio.load(item.title?.rendered || "").text();
+            const parsed = parseTitle(rawTitle);
+            return {
+              rawTitle,
+              url: item.link,
+              ...parsed,
+            };
+          });
       }
     }
   } catch {}

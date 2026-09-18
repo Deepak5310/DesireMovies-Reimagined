@@ -268,6 +268,7 @@ bot.callbackQuery(/^pub:(.+)$/, async (ctx) => {
   if (!url) {
     return ctx.answerCallbackQuery({ text: "⚠️ Search result expired. Please search again!", show_alert: true });
   }
+
   await ctx.answerCallbackQuery({ text: "⏳ Scraping & publishing to channel..." });
   const targetChat = config.channelId || ctx.chat.id;
   try {
@@ -275,6 +276,8 @@ bot.callbackQuery(/^pub:(.+)$/, async (ctx) => {
     if (postData) {
       const { displayTitle } = parseTitle(postData.title);
       await ctx.reply(`✅ <b>Published to ${config.channelId ? "Channel" : "Chat"}!</b>\n\n🎬 <b>${escapeHtml(displayTitle || postData.title)}</b>`, { parse_mode: "HTML" });
+    } else {
+      await ctx.reply("⚠️ <b>No active download links found in this post</b> (the links on the website might be expired or unavailable).", { parse_mode: "HTML" });
     }
   } catch (err) {
     await ctx.reply(`❌ Failed to publish: ${escapeHtml(err.message)}`);
@@ -287,9 +290,13 @@ bot.callbackQuery(/^get:(.+)$/, async (ctx) => {
   if (!url) {
     return ctx.answerCallbackQuery({ text: "⚠️ Search result expired. Please search again!", show_alert: true });
   }
+
   await ctx.answerCallbackQuery({ text: "⏳ Fetching direct download links..." });
   try {
-    await broadcastPost(ctx.chat.id, url);
+    const postData = await broadcastPost(ctx.chat.id, url);
+    if (!postData) {
+      await ctx.reply("⚠️ <b>No active download links found in this post</b> (the links on the website might be expired or unavailable).", { parse_mode: "HTML" });
+    }
   } catch (err) {
     await ctx.reply(`❌ Failed to fetch links: ${escapeHtml(err.message)}`);
   }
