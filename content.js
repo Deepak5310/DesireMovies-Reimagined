@@ -4,6 +4,116 @@
   if (window.__desiremoviesInjected) return;
   window.__desiremoviesInjected = true;
 
+  // Web Player frame helper (mouse wheel volume, HUD toast, and keyboard control)
+  if (location.hostname.includes("hbplay.pages.dev")) {
+    let toastTimer = null;
+    function showToast(text) {
+      let badge = document.getElementById("dm-hud-toast");
+      if (!badge) {
+        badge = document.createElement("div");
+        badge.id = "dm-hud-toast";
+        badge.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:12px 24px;border-radius:10px;background:rgba(8,12,22,0.88);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:17px;font-weight:700;font-family:system-ui,-apple-system,sans-serif;pointer-events:none;z-index:2147483647;transition:opacity 0.18s ease, transform 0.18s ease;opacity:0;";
+        (document.body || document.documentElement).appendChild(badge);
+      }
+      badge.textContent = text;
+      badge.style.opacity = "1";
+      badge.style.transform = "translate(-50%,-50%) scale(1)";
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        badge.style.opacity = "0";
+        badge.style.transform = "translate(-50%,-50%) scale(0.92)";
+      }, 700);
+    }
+
+    const getVid = () => document.querySelector("video") || document.getElementById("videoPlayer");
+
+    function adjustVol(delta) {
+      const v = getVid();
+      if (!v) return;
+      const next = Math.max(0, Math.min(1, (v.muted ? 0 : v.volume) + delta));
+      v.volume = next;
+      v.muted = next === 0;
+    }
+
+    function seekRel(sec) {
+      const v = getVid();
+      if (!v) return;
+      v.currentTime = Math.max(0, Math.min(v.duration || Infinity, v.currentTime + sec));
+    }
+
+    function togglePlay() {
+      const v = getVid();
+      if (!v) return;
+      if (v.paused) v.play().catch(() => {});
+      else v.pause();
+    }
+
+    function toggleMute() {
+      const v = getVid();
+      if (!v) return;
+      v.muted = !v.muted;
+    }
+
+    function initVid() {
+      const v = getVid();
+      if (!v || v.__dmInit) return;
+      v.__dmInit = true;
+      v.addEventListener("volumechange", () => {
+        showToast(v.muted || v.volume === 0 ? "🔇 Muted" : `🔊 ${Math.round(v.volume * 100)}%`);
+      });
+    }
+    initVid();
+    document.addEventListener("DOMContentLoaded", initVid);
+
+    window.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      adjustVol(e.deltaY < 0 ? 0.05 : -0.05);
+    }, { passive: false });
+
+    window.addEventListener("keydown", (e) => {
+      if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+      const k = e.key.toLowerCase();
+      if (k === "escape") {
+        if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+        else window.parent?.postMessage({ action: "dm_close" }, "*");
+      } else if (k === "j") {
+        e.preventDefault(); seekRel(-10);
+      } else if (k === "l") {
+        e.preventDefault(); seekRel(10);
+      } else if (k >= "0" && k <= "9") {
+        const v = getVid();
+        if (v?.duration) { e.preventDefault(); v.currentTime = (Number(k) / 10) * v.duration; }
+      }
+    }, true);
+
+    window.addEventListener("message", (e) => {
+      const act = e.data?.action;
+      if (act === "dm_wheel") adjustVol(e.data.deltaY < 0 ? 0.05 : -0.05);
+      else if (act === "dm_key") {
+        const k = (e.data.key || "").toLowerCase();
+        if (k === " " || k === "k") togglePlay();
+        else if (k === "arrowleft" || k === "j") seekRel(-10);
+        else if (k === "arrowright" || k === "l") seekRel(10);
+        else if (k === "arrowup") adjustVol(0.05);
+        else if (k === "arrowdown") adjustVol(-0.05);
+        else if (k === "m") toggleMute();
+        else if (k === "p") {
+          const v = getVid();
+          if (v && document.pictureInPictureEnabled) {
+            document.pictureInPictureElement ? document.exitPictureInPicture?.() : v.requestPictureInPicture?.();
+          }
+        } else if (k >= "0" && k <= "9") {
+          const v = getVid();
+          if (v?.duration) v.currentTime = (Number(k) / 10) * v.duration;
+        }
+      }
+    });
+
+    return;
+  }
+
+  if (window !== window.top) return;
+
   const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse|multicloudlinks)/i;
   const CACHE_KEY = "dm_playback_cache";
   const TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -262,9 +372,17 @@
       else (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
     };
 
+    function onMessage(e) {
+      if (e.data?.action === "dm_close") close();
+      else if (e.data?.action === "dm_toggle_fs") toggleFs();
+    }
+    window.addEventListener("message", onMessage);
+
     function close() {
       if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("message", onMessage);
+      document.onfullscreenchange = null;
       document.body.style.overflow = prevOverflow;
       overlay.querySelector(".dm-web-frame")?.remove();
       if (!useWeb) {
@@ -285,6 +403,31 @@
     overlay.querySelector("#dm-btn-copy").onclick = function () { copyText(this, streamUrl || hbplayUrl); };
     const tabBtn = overlay.querySelector("#dm-btn-tab");
     if (tabBtn) tabBtn.onclick = () => window.open(hbplayUrl, "_blank");
+
+    document.onfullscreenchange = () => {
+      container.classList.toggle("is-fullscreen", isFs());
+      const fsBtn = overlay.querySelector("#dm-fs");
+      if (fsBtn) fsBtn.innerHTML = isFs() ? ICONS.fsExit : ICONS.fs;
+    };
+
+    overlay.onwheel = (e) => {
+      e.preventDefault();
+      if (useWeb) {
+        const iframe = overlay.querySelector(".dm-web-frame");
+        iframe?.contentWindow?.postMessage({ action: "dm_wheel", deltaY: e.deltaY }, "*");
+      } else {
+        const video = overlay.querySelector(".dm-video-el");
+        if (video) setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05));
+      }
+    };
+
+    if (useWeb) {
+      const iframe = overlay.querySelector(".dm-web-frame");
+      if (iframe) {
+        setTimeout(() => { try { iframe.focus(); } catch {} }, 150);
+        iframe.onload = () => { try { iframe.focus(); } catch {} };
+      }
+    }
 
     const KEY_MAP = {
       "f": toggleFs,
@@ -508,10 +651,6 @@
       };
 
       fsBtn.onclick = toggleFs;
-      document.onfullscreenchange = () => {
-        container.classList.toggle("is-fullscreen", isFs());
-        fsBtn.innerHTML = isFs() ? ICONS.fsExit : ICONS.fs;
-      };
 
       if (document.pictureInPictureEnabled) {
         pipBtn.onclick = async () => {
@@ -534,7 +673,6 @@
 
       stage.ondblclick = (e) => { if (e.target === video || e.target === stage) toggleFs(); };
       stage.onclick = (e) => { if (e.target === video) togglePlay(); };
-      stage.onwheel = (e) => { e.preventDefault(); setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05)); };
 
       Object.assign(KEY_MAP, {
         " ": togglePlay, "k": togglePlay,
@@ -549,13 +687,28 @@
       video.play().catch(() => {});
     }
 
+    const FORWARD_KEYS = new Set([
+      " ", "k", "j", "l", "p",
+      "arrowleft", "arrowright", "arrowup", "arrowdown",
+      "m",
+      "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
+    ]);
+
     function onKey(e) {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
       const k = e.key.toLowerCase();
-      if (!useWeb && k >= "0" && k <= "9" && getDur() > 0) {
-        e.preventDefault(); e.stopPropagation(); video.currentTime = (Number(k) / 10) * getDur(); return;
+      if (KEY_MAP[k]) { e.preventDefault(); e.stopPropagation(); KEY_MAP[k](); return; }
+      if (useWeb) {
+        if (FORWARD_KEYS.has(k)) {
+          e.preventDefault(); e.stopPropagation();
+          const iframe = overlay.querySelector(".dm-web-frame");
+          iframe?.contentWindow?.postMessage({ action: "dm_key", key: e.key }, "*");
+        }
+      } else if (k >= "0" && k <= "9" && getDur() > 0) {
+        e.preventDefault(); e.stopPropagation();
+        const video = overlay.querySelector(".dm-video-el");
+        if (video) video.currentTime = (Number(k) / 10) * getDur();
       }
-      if (KEY_MAP[k]) { e.preventDefault(); e.stopPropagation(); KEY_MAP[k](); }
     }
     window.addEventListener("keydown", onKey, true);
   }
@@ -581,7 +734,7 @@
           const res = await sendBg("resolve_stream", { url: href });
           btn.innerHTML = "▶ Watch Online";
           btn.disabled = false;
-          if (res?.success && res.streamUrl) openPlayer(res.streamUrl, href, title, btn, res.hbplayUrl);
+          if (res?.success && (res.streamUrl || res.hbplayUrl)) openPlayer(res.streamUrl, href, title, btn, res.hbplayUrl);
           else throw new Error(res?.error || "Stream unavailable");
         } catch (err) {
           btn.innerHTML = `❌ ${err.message || "Failed"}`;
