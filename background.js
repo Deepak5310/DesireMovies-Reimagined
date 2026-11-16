@@ -1,9 +1,6 @@
 "use strict";
 
-/**
- * Service Worker for DesireMovies Bypass & Stream (Manifest V3)
- * Concise, event-driven multi-hop link resolver & filename sanitizer.
- */
+// Service Worker — DesireMovies Bypass & Stream (MV3)
 
 const bypassCache = new Map();
 const activeBypasses = new Map();
@@ -12,9 +9,9 @@ const CACHE_TTL = 3 * 3600 * 1000; // 3 Hours
 const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse|multicloudlinks)/i;
 const RE_STREAM = /href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers(?:\.dev)?|cloudflarestorage|pixeldrain)[^"']+)["']/i;
 const RE_CLOUD = /href=["']([^"']*\/(?:cloud)\/[^"'\s]+)["']/i;
-const RE_HUB = /href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['"]/i;
-const RE_GDFLIX = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['"]/i;
-const RE_GATEWAY = /href=["'](https?:\/\/[^"'\s]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s]*)['"]/i;
+const RE_HUB = /href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['\"]/i;
+const RE_GDFLIX = /href=["'](https?:\/\/[^"'\s]*gdflix[^"'\s]*)['\"]/i;
+const RE_GATEWAY = /href=["'](https?:\/\/[^"'\s]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s]*)['\"]/i;
 
 // Cache restoration & session persistence
 const ready = chrome.storage.session.get(["bypassCache"]).then(({ bypassCache: c }) => {
@@ -191,7 +188,7 @@ async function resolveHubCloud(hubUrl, onProgress, isStream = false) {
     return { streamUrl: u, downloadUrl: u };
   }
 
-  const gateway = html.match(/href=["'](https?:\/\/[^"'\s]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s]*)['"]/i) ||
+  const gateway = html.match(/href=["'](https?:\/\/[^"'\s]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s]*)['\"]/i) ||
                   html.match(/<a[^>]+id=["']download["'][^>]*href=["']([^"']+)["']/i) ||
                   html.match(/href=["'](https?:\/\/[^"'\s]+)["'][^>]*>(?:(?!<\/a>)[\s\S])*Generate Direct Download Link/i);
   if (gateway) {
@@ -255,7 +252,7 @@ async function resolveFullChain(url, onProgress, isStream = false) {
       }
     }
     const hub = html.match(/href=["'](https?:\/\/[^"'\s]*(?:hubcloud\.[^"'\s]*\/drive\/[^"'\s]+))["']/i) ||
-                html.match(/href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['"]/i);
+                html.match(/href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['\"]/i);
     if (hub) {
       try { final = await resolveHubCloud(hub[1], onProgress, isStream); } catch {}
     }
@@ -360,22 +357,10 @@ function handleBypassRequest(url, tabId, isStream, sendResponse) {
       if (isStream) {
         sendResponse({ success: true, streamUrl: res.streamUrl, hbplayUrl: res.hbplayUrl });
       } else {
-        let dl = res.downloadUrl;
-        if (dl && dl.includes("dl.php")) {
-          const unwrapped = new URL(dl).searchParams.get("link");
-          if (unwrapped && unwrapped.startsWith("http")) dl = unwrapped;
-        }
-        const is10G = /gpdl|googleusercontent|workers\.dev/i.test(dl);
-        chrome.downloads.download({ url: dl }, (id) => {
+        chrome.downloads.download({ url: res.downloadUrl }, (id) => {
           if (chrome.runtime.lastError) console.warn("Download error:", chrome.runtime.lastError.message);
         });
-        if (is10G && tabId) {
-          chrome.tabs.sendMessage(tabId, {
-            action: "dm_toast",
-            message: "10Gbps Server: Please do not pause download (resume not supported)"
-          }).catch(() => {});
-        }
-        sendResponse({ success: true, is10Gbps: is10G });
+        sendResponse({ success: true, is10Gbps: res.is10Gbps });
       }
     })
     .catch((err) => {
@@ -415,7 +400,7 @@ function cleanFilename(filename) {
   let base = name.slice(0, dotIdx).replace(/\s*\(\d+\)$/, "").replace(/[\[\]\(\)\{\}]/g, " ");
   let epTag = "";
 
-  base = base.replace(/^EP((\.\d+)+)\./i, (_, grp) => {
+  base = base.replace(/^EP((\.d+)+)\./i, (_, grp) => {
     const nums = grp.split(".").filter(Boolean).map((n) => String(n).padStart(2, "0"));
     epTag = nums[0] === nums.at(-1) ? `EP${nums[0]}` : `EP${nums[0]}-${nums.at(-1)}`;
     return "";
@@ -424,7 +409,7 @@ function cleanFilename(filename) {
   const clean = base
     .replace(/(?:www\.)?(?:desiremovies|katmoviehd|katdrama|kmhd|moviesbaba)(?:\.[a-z]{2,8})?/gi, "")
     .replace(/\b(10bits?|hevc|hq|hd|dual[- ]?audio|esubs?|msubs?|multi[- ]?audio|hin[- ]?eng|eng[- ]?hin|hindi[- ]?english|english[- ]?hindi|kor|x264|x265)\b/gi, "")
-    .replace(/\bS(\d{2})(?:[.\-_]?(?:E|EP)?(\d{1,3})(?:-(?:E|EP)?(\d{1,3}))?)?\b/gi, (_, s, e1, e2) => {
+    .replace(/\bS(\d{2})(?:[.\-_]?(?:E|EP)?(\d{1,3})(?:-(?:E|EP)?(\d{1,3}))?)?/gi, (_, s, e1, e2) => {
       if (!e1) return epTag ? `S${s} ${epTag}` : `S${s}`;
       const p1 = String(e1).padStart(2, "0");
       return e2 ? `S${s} EP${p1}-${String(e2).padStart(2, "0")}` : `S${s} EP${p1}`;

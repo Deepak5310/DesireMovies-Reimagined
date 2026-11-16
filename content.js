@@ -63,7 +63,6 @@
       });
     }
     initVid();
-    document.addEventListener("DOMContentLoaded", initVid);
 
     window.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -410,18 +409,18 @@
       if (fsBtn) fsBtn.innerHTML = isFs() ? ICONS.fsExit : ICONS.fs;
     };
 
-    overlay.onwheel = (e) => {
-      e.preventDefault();
-      if (useWeb) {
-        const iframe = overlay.querySelector(".dm-web-frame");
-        iframe?.contentWindow?.postMessage({ action: "dm_wheel", deltaY: e.deltaY }, "*");
-      } else {
-        const video = overlay.querySelector(".dm-video-el");
-        if (video) setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05));
-      }
+    const KEY_MAP = {
+      "f": toggleFs,
+      "escape": () => { modal.style.display === "flex" ? (modal.style.display = "none") : (isFs() ? toggleFs() : close()); }
     };
 
     if (useWeb) {
+      overlay.onwheel = (e) => {
+        e.preventDefault();
+        const iframe = overlay.querySelector(".dm-web-frame");
+        iframe?.contentWindow?.postMessage({ action: "dm_wheel", deltaY: e.deltaY }, "*");
+      };
+
       const iframe = overlay.querySelector(".dm-web-frame");
       if (iframe) {
         setTimeout(() => { try { iframe.focus(); } catch {} }, 150);
@@ -429,12 +428,13 @@
       }
     }
 
-    const KEY_MAP = {
-      "f": toggleFs,
-      "escape": () => { modal.style.display === "flex" ? (modal.style.display = "none") : (isFs() ? toggleFs() : close()); }
-    };
-
     if (!useWeb) {
+      overlay.onwheel = (e) => {
+        e.preventDefault();
+        const video = overlay.querySelector(".dm-video-el");
+        if (video) setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05));
+      };
+
       const stage = overlay.querySelector(".dm-video-stage");
       const video = overlay.querySelector(".dm-video-el");
       const playBtn = overlay.querySelector("#dm-play");
