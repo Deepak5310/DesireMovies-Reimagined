@@ -4,12 +4,13 @@
   if (window.__desiremoviesInjected) return;
   window.__desiremoviesInjected = true;
 
-  const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katdrama|hubcloud|hubdrive)/i;
+  const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse|multicloudlinks)/i;
   const CACHE_KEY = "dm_playback_cache";
   const TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const activeAnchors = new Map();
 
   function sendBg(action, payload = {}) {
+    if (!chrome.runtime?.id) return Promise.reject(new Error("Extension context invalidated"));
     return new Promise((res, rej) => {
       chrome.runtime.sendMessage({ action, payload }, (r) => {
         chrome.runtime.lastError ? rej(new Error(chrome.runtime.lastError.message)) : res(r);
@@ -78,8 +79,26 @@
     saveStore();
   }
 
-  // Progress message handler from background
+  function showToast(text, duration = 6000) {
+    document.getElementById("dm-toast")?.remove();
+    const toast = document.createElement("div");
+    toast.id = "dm-toast";
+    toast.className = "dm-toast";
+    toast.innerHTML = `<span class="dm-toast-icon">⚡</span><span>${text}</span>`;
+    (document.body || document.documentElement).appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("show"));
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 350);
+    }, duration);
+  }
+
+  // Progress and toast message handler from background
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === "dm_toast") {
+      showToast(msg.message);
+      return;
+    }
     if (msg.action !== "bypass_progress") return;
     const { url, statusText } = msg;
     const packBtn = document.getElementById("btn-dl-all-episodes");
@@ -132,7 +151,7 @@
       .catch(() => flash(btn, "❌ Failed"));
   }
 
-  function openPlayer(streamUrl, bypassUrl, titleText, openerBtn) {
+  function openPlayer(streamUrl, bypassUrl, titleText, openerBtn, hbplayUrl) {
     document.getElementById("desiremovies-watch-overlay")?.remove();
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -142,33 +161,38 @@
     overlay.className = "dm-overlay-root";
     overlay.tabIndex = -1;
 
+    const useWeb = !!hbplayUrl;
+
     overlay.innerHTML = `
       <div class="dm-player-container" tabindex="-1">
         <div class="dm-video-stage">
-          <video class="dm-video-el" src="${streamUrl}" playsinline preload="auto"></video>
-          <div class="dm-center-pulse"></div>
-          <div class="dm-hud-popup">
-            <svg class="dm-hud-ring-svg" viewBox="0 0 82 82">
-              <circle class="dm-hud-ring-bg" cx="41" cy="41" r="36"></circle>
-              <circle class="dm-hud-ring-bar" cx="41" cy="41" r="36"></circle>
-            </svg>
-            <div class="dm-hud-content"><span class="dm-hud-icon"></span><span class="dm-hud-text"></span></div>
-          </div>
-          <div class="dm-buffering-spinner"></div>
+          ${useWeb
+            ? `<iframe class="dm-web-frame dm-video-el" src="${hbplayUrl}" style="border:none;width:100%;height:100%;background:#000;position:absolute;inset:0;z-index:2;" allow="autoplay; fullscreen; picture-in-picture"></iframe>`
+            : `<video class="dm-video-el" src="${streamUrl}" playsinline preload="auto"></video>
+               <div class="dm-center-pulse"></div>
+               <div class="dm-hud-popup">
+                 <svg class="dm-hud-ring-svg" viewBox="0 0 82 82">
+                   <circle class="dm-hud-ring-bg" cx="41" cy="41" r="36"></circle>
+                   <circle class="dm-hud-ring-bar" cx="41" cy="41" r="36"></circle>
+                 </svg>
+                 <div class="dm-hud-content"><span class="dm-hud-icon"></span><span class="dm-hud-text"></span></div>
+               </div>
+               <div class="dm-buffering-spinner"></div>`
+          }
 
           <div class="dm-floating-top">
             <div class="dm-title-box">
               <span class="dm-badge">DESIREMOVIES • WATCH ONLINE</span>
-              <span class="dm-title-text">${titleText || "Video Stream"}</span>
+              <span class="dm-title-text"></span>
             </div>
             <div class="dm-top-actions">
-              <button class="dm-btn-action" id="dm-btn-sound">🔊 No Sound?</button>
+              ${useWeb ? `<button class="dm-btn-action" id="dm-btn-tab">↗ New Tab</button>` : ""}
               <button class="dm-btn-action" id="dm-btn-copy">${ICONS.copy} Copy Link</button>
-              <button class="dm-btn-action" id="dm-btn-dl">${ICONS.dl} Download</button>
               <button class="dm-btn-action dm-btn-close" id="dm-btn-close">${ICONS.close}</button>
             </div>
           </div>
 
+          ${useWeb ? "" : `
           <div class="dm-floating-bottom">
             <div class="dm-progress-track">
               <div class="dm-buffer-bar"></div>
@@ -197,6 +221,7 @@
               </div>
             </div>
           </div>
+          `}
 
           <div class="dm-modal-backdrop" id="dm-modal">
             <div class="dm-modal-card">
@@ -210,35 +235,11 @@
     `;
 
     document.documentElement.appendChild(overlay);
+    overlay.querySelector(".dm-title-text").textContent = titleText || "Video Stream";
 
-    const stage = overlay.querySelector(".dm-video-stage");
     const container = overlay.querySelector(".dm-player-container");
-    const video = overlay.querySelector(".dm-video-el");
-    const playBtn = overlay.querySelector("#dm-play");
-    const topBar = overlay.querySelector(".dm-floating-top");
-    const bottomBar = overlay.querySelector(".dm-floating-bottom");
-    const track = overlay.querySelector(".dm-progress-track");
-    const playedBar = overlay.querySelector(".dm-played-bar");
-    const bufferBar = overlay.querySelector(".dm-buffer-bar");
-    const previewCard = overlay.querySelector(".dm-preview-card");
-    const previewThumb = overlay.querySelector(".dm-preview-thumb");
-    const tooltip = overlay.querySelector(".dm-time-tooltip");
-    const timeDisplay = overlay.querySelector(".dm-time-display");
-    const volBtn = overlay.querySelector("#dm-vol-btn");
-    const volSlider = overlay.querySelector(".dm-vol-slider");
-    const volFill = overlay.querySelector(".dm-vol-fill");
-    const speedBtn = overlay.querySelector("#dm-speed");
-    const fsBtn = overlay.querySelector("#dm-fs");
-    const pipBtn = overlay.querySelector("#dm-pip");
-    const pulse = overlay.querySelector(".dm-center-pulse");
-    const spinner = overlay.querySelector(".dm-buffering-spinner");
-    const hud = overlay.querySelector(".dm-hud-popup");
-    const hudRing = overlay.querySelector(".dm-hud-ring-bar");
-    const hudIcon = overlay.querySelector(".dm-hud-icon");
-    const hudText = overlay.querySelector(".dm-hud-text");
     const modal = overlay.querySelector("#dm-modal");
 
-    // Modal Helper
     function showDialog(title, desc, buttons) {
       overlay.querySelector("#dm-modal-title").textContent = title;
       overlay.querySelector("#dm-modal-desc").innerHTML = desc;
@@ -255,278 +256,308 @@
     }
     modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
 
-    // Initial Volume Restoration
-    let lastVol = parseFloat(localStorage.getItem("dm_player_volume")) || 0.5;
-    video.volume = Math.max(0, Math.min(1, lastVol));
-    video.muted = localStorage.getItem("dm_player_muted") === "true";
-
-    function syncVolUI() {
-      const v = video.muted ? 0 : video.volume;
-      volFill.style.width = `${Math.round(v * 100)}%`;
-      volBtn.innerHTML = v === 0 || video.muted ? ICONS.volMute : (v < 0.5 ? ICONS.volLow : ICONS.volHigh);
-    }
-    syncVolUI();
-
-    let hudTimer = null;
-    function showHud(icon, text, progress = null) {
-      hudIcon.innerHTML = icon;
-      hudText.textContent = text;
-      hudRing.style.strokeDashoffset = progress !== null ? String(226.2 * (1 - Math.max(0, Math.min(1, progress)))) : "0";
-      hud.classList.add("show");
-      clearTimeout(hudTimer);
-      hudTimer = setTimeout(() => hud.classList.remove("show"), 750);
-    }
-
-    function triggerPulse(icon) {
-      pulse.innerHTML = icon;
-      pulse.classList.remove("show");
-      void pulse.offsetWidth;
-      pulse.classList.add("show");
-    }
-
-    function setVol(lvl) {
-      const clamped = Math.max(0, Math.min(1, lvl));
-      video.volume = clamped;
-      video.muted = clamped === 0;
-      if (clamped > 0) lastVol = clamped;
-      localStorage.setItem("dm_player_volume", String(lastVol));
-      localStorage.setItem("dm_player_muted", String(video.muted));
-      syncVolUI();
-      showHud(video.muted ? ICONS.volMute : ICONS.volHigh, `${Math.round(clamped * 100)}%`, video.muted ? 0 : clamped);
-    }
-
-    // Play/Pause & Duration
-    const getDur = () => (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : (video.seekable?.length ? video.seekable.end(video.seekable.length - 1) : 0));
-    let showRemaining = false;
-
-    function updateProgress() {
-      const dur = getDur(), cur = video.currentTime;
-      playedBar.style.width = dur > 0 ? `${(cur / dur) * 100}%` : "0%";
-      const curStr = showRemaining && dur > 0 ? `-${fmtTime(dur - cur)}` : fmtTime(cur);
-      timeDisplay.textContent = `${curStr} / ${fmtTime(dur)}`;
-    }
-
-    function togglePlay() {
-      if (video.paused) { video.play().catch(() => {}); playBtn.innerHTML = ICONS.pause; triggerPulse(ICONS.play); }
-      else { video.pause(); playBtn.innerHTML = ICONS.play; triggerPulse(ICONS.pause); }
-    }
-
-    function seekRelative(delta) {
-      const dur = getDur();
-      video.currentTime = Math.max(0, Math.min(dur || Infinity, video.currentTime + delta));
-      triggerPulse(delta > 0 ? ICONS.forward : ICONS.rewind);
-    }
-
-    // Resume position
-    const videoKey = getPlaybackKey(bypassUrl, streamUrl, titleText);
-    getSavedPos(videoKey).then((saved) => {
-      if (!saved || saved < 5 || !document.contains(overlay)) return;
-      const banner = document.createElement("div");
-      banner.className = "dm-resume-banner";
-      banner.innerHTML = `
-        <span>⏱️ Resume from <b>${fmtTime(saved)}</b>?</span>
-        <button class="dm-resume-btn dm-resume-btn-primary" id="dm-res-yes">▶ Resume</button>
-        <button class="dm-resume-btn dm-resume-btn-secondary" id="dm-res-no">↺ Restart</button>
-        <button class="dm-resume-close">✕</button>
-      `;
-      stage.appendChild(banner);
-      const rm = () => { banner.classList.add("dm-hidden"); setTimeout(() => banner.remove(), 250); };
-      banner.querySelector("#dm-res-yes").onclick = () => { video.currentTime = saved; video.play().catch(() => {}); rm(); };
-      banner.querySelector("#dm-res-no").onclick = () => { video.currentTime = 0; clearSavedPos(videoKey); rm(); };
-      banner.querySelector(".dm-resume-close").onclick = rm;
-      setTimeout(rm, 10000);
-    });
-
-    // Control bar autohide
-    let hideTimer = null;
-    function pokeControls() {
-      topBar.classList.remove("dm-controls-hidden");
-      bottomBar.classList.remove("dm-controls-hidden");
-      clearTimeout(hideTimer);
-      if (!video.paused) hideTimer = setTimeout(() => {
-        topBar.classList.add("dm-controls-hidden");
-        bottomBar.classList.add("dm-controls-hidden");
-      }, 2500);
-    }
-    stage.addEventListener("mousemove", pokeControls);
-
-    // Timeline Scrubbing & Hover Preview
-    let isScrubbing = false;
-    let lastPreviewSeek = 0;
-    previewThumb.src = streamUrl;
-    previewThumb.onloadeddata = () => previewThumb.classList.add("is-ready");
-    previewThumb.onerror = () => previewThumb.classList.remove("is-ready");
-
-    function updatePreview(e) {
-      const r = track.getBoundingClientRect(), dur = getDur();
-      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-      if (dur > 0) {
-        const t = pct * dur;
-        tooltip.textContent = fmtTime(t);
-        const cardX = Math.max(75, Math.min(r.width - 75, e.clientX - r.left));
-        previewCard.style.left = `${cardX}px`;
-        previewCard.classList.add("show");
-
-        const now = Date.now();
-        if (now - lastPreviewSeek > 120 && previewThumb.classList.contains("is-ready")) {
-          lastPreviewSeek = now;
-          previewThumb.currentTime = t;
-        }
-      }
-    }
-
-    function scrubTrack(e) {
-      const r = track.getBoundingClientRect(), dur = getDur();
-      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-      if (dur > 0) video.currentTime = pct * dur;
-    }
-    track.onmousedown = (e) => { isScrubbing = true; track.classList.add("is-dragging"); scrubTrack(e); };
-    track.onmousemove = updatePreview;
-    track.onmouseleave = () => { if (!isScrubbing) previewCard.classList.remove("show"); };
-
-    // Volume Scrubbing
-    let isVolScrubbing = false;
-    function scrubVol(e) {
-      const r = volSlider.getBoundingClientRect();
-      setVol((e.clientX - r.left) / r.width);
-    }
-    volSlider.onmousedown = (e) => { isVolScrubbing = true; scrubVol(e); };
-
-    window.addEventListener("mousemove", (e) => {
-      if (isScrubbing) { scrubTrack(e); updatePreview(e); }
-      if (isVolScrubbing) scrubVol(e);
-    });
-    window.addEventListener("mouseup", () => {
-      if (isScrubbing) { isScrubbing = false; track.classList.remove("is-dragging"); previewCard.classList.remove("show"); }
-      isVolScrubbing = false;
-    });
-
-    // Video Events
-    video.ontimeupdate = () => {
-      updateProgress();
-      if (getDur()) updateSavedPos(videoKey, video.currentTime, getDur());
-    };
-    video.onprogress = () => {
-      const dur = getDur();
-      if (dur && video.buffered.length) bufferBar.style.width = `${(video.buffered.end(video.buffered.length - 1) / dur) * 100}%`;
-    };
-    video.onplay = () => { playBtn.innerHTML = ICONS.pause; pokeControls(); };
-    video.onpause = () => { playBtn.innerHTML = ICONS.play; pokeControls(); };
-    video.onseeking = () => { spinner.style.display = "block"; };
-    video.onseeked = () => { spinner.style.display = "none"; };
-    video.onwaiting = () => { spinner.style.display = "block"; };
-    video.onplaying = () => { spinner.style.display = "none"; };
-    video.onerror = () => {
-      spinner.style.display = "none";
-      showDialog("Browser Codec Notice", "This video container or audio codec (e.g. MKV, Dolby EAC3/DTS) cannot be natively decoded in Chrome. Download directly or copy the MPV command to stream smoothly.", [
-        { label: `${ICONS.dl} Download`, primary: true, onClick: () => overlay.querySelector("#dm-btn-dl").click() },
-        { label: "▶ Copy MPV", onClick: (b) => copyText(b, `mpv "${streamUrl}"`, "✓ Copied MPV!"), close: false },
-        { label: "Copy Link", onClick: (b) => copyText(b, streamUrl) }
-      ]);
-    };
-
-    // Button Actions
-    playBtn.onclick = togglePlay;
-    overlay.querySelector("#dm-rw").onclick = () => seekRelative(-10);
-    overlay.querySelector("#dm-ff").onclick = () => seekRelative(10);
-    timeDisplay.onclick = () => { showRemaining = !showRemaining; updateProgress(); };
-    volBtn.onclick = () => setVol(video.muted || video.volume === 0 ? (lastVol || 0.5) : 0);
-
-    const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-    let spdIdx = 2;
-    speedBtn.onclick = () => {
-      spdIdx = (spdIdx + 1) % SPEEDS.length;
-      video.playbackRate = SPEEDS[spdIdx];
-      speedBtn.textContent = `${SPEEDS[spdIdx]}x`;
-      showHud("⚡", `${SPEEDS[spdIdx]}x`, SPEEDS[spdIdx] / 2);
-    };
-
     const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
     const toggleFs = () => {
       if (!isFs()) (container.requestFullscreen || container.webkitRequestFullscreen)?.call(container).catch(() => {});
       else (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
-    };
-    fsBtn.onclick = toggleFs;
-    document.onfullscreenchange = () => {
-      container.classList.toggle("is-fullscreen", isFs());
-      fsBtn.innerHTML = isFs() ? ICONS.fsExit : ICONS.fs;
-    };
-
-    if (document.pictureInPictureEnabled) {
-      pipBtn.onclick = async () => {
-        try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await video.requestPictureInPicture(); } catch {}
-      };
-    } else pipBtn.style.display = "none";
-
-    overlay.querySelector("#dm-btn-copy").onclick = function () { copyText(this, streamUrl); };
-    overlay.querySelector("#dm-btn-dl").onclick = async function () {
-      this.innerHTML = "⏳ Starting…";
-      const res = await sendBg("full_bypass", { url: bypassUrl }).catch(() => null);
-      flash(this, res?.success ? "✅ Started" : "❌ Failed", 2500, `${ICONS.dl} Download`);
-    };
-
-    overlay.querySelector("#dm-btn-sound").onclick = () => {
-      showDialog("No Audio in Browser?", "Web browsers cannot decode multi-channel <b>Dolby Digital (AC3/E-AC3)</b> or <b>DTS</b> audio tracks. Copy the MPV command to play with full surround sound or download the video.", [
-        { label: "▶ Copy MPV Command", primary: true, onClick: (b) => copyText(b, `mpv "${streamUrl}"`, "✓ Copied MPV!"), close: false },
-        { label: "Copy Link", onClick: (b) => copyText(b, streamUrl) },
-        { label: "Close" }
-      ]);
-    };
-
-    overlay.querySelector("#dm-help").onclick = () => {
-      showDialog("⌨️ Keyboard Shortcuts", `
-        <div class="dm-shortcuts-grid">
-          <div class="dm-shortcut-row"><span>Play / Pause</span><span class="dm-shortcut-key">Space / K</span></div>
-          <div class="dm-shortcut-row"><span>Seek ±10s</span><span class="dm-shortcut-key">← / → or J / L</span></div>
-          <div class="dm-shortcut-row"><span>Volume ±5%</span><span class="dm-shortcut-key">↑ / ↓ or Wheel</span></div>
-          <div class="dm-shortcut-row"><span>Mute</span><span class="dm-shortcut-key">M</span></div>
-          <div class="dm-shortcut-row"><span>Fullscreen</span><span class="dm-shortcut-key">F</span></div>
-          <div class="dm-shortcut-row"><span>Close</span><span class="dm-shortcut-key">Esc</span></div>
-        </div>
-      `, [{ label: "Close" }]);
     };
 
     function close() {
       if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
       window.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = prevOverflow;
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-      previewThumb.pause();
-      previewThumb.removeAttribute("src");
-      previewThumb.load();
+      overlay.querySelector(".dm-web-frame")?.remove();
+      if (!useWeb) {
+        const video = overlay.querySelector(".dm-video-el");
+        video?.pause();
+        video?.removeAttribute("src");
+        video?.load();
+        const thumb = overlay.querySelector(".dm-preview-thumb");
+        thumb?.pause();
+        thumb?.removeAttribute("src");
+        thumb?.load();
+      }
       overlay.remove();
       openerBtn?.focus();
     }
 
     overlay.querySelector("#dm-btn-close").onclick = close;
-    stage.ondblclick = (e) => { if (e.target === video || e.target === stage) toggleFs(); };
-    stage.onclick = (e) => { if (e.target === video) togglePlay(); };
-    stage.onwheel = (e) => { e.preventDefault(); setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05)); };
+    overlay.querySelector("#dm-btn-copy").onclick = function () { copyText(this, streamUrl || hbplayUrl); };
+    const tabBtn = overlay.querySelector("#dm-btn-tab");
+    if (tabBtn) tabBtn.onclick = () => window.open(hbplayUrl, "_blank");
 
     const KEY_MAP = {
-      " ": togglePlay, "k": togglePlay,
-      "arrowleft": () => seekRelative(-10), "j": () => seekRelative(-10),
-      "arrowright": () => seekRelative(10), "l": () => seekRelative(10),
-      "arrowup": () => setVol(video.volume + 0.05),
-      "arrowdown": () => setVol(video.volume - 0.05),
-      "m": () => setVol(video.muted ? (lastVol || 0.5) : 0),
-      "f": toggleFs, "p": () => pipBtn.click(),
+      "f": toggleFs,
       "escape": () => { modal.style.display === "flex" ? (modal.style.display = "none") : (isFs() ? toggleFs() : close()); }
     };
+
+    if (!useWeb) {
+      const stage = overlay.querySelector(".dm-video-stage");
+      const video = overlay.querySelector(".dm-video-el");
+      const playBtn = overlay.querySelector("#dm-play");
+      const topBar = overlay.querySelector(".dm-floating-top");
+      const bottomBar = overlay.querySelector(".dm-floating-bottom");
+      const track = overlay.querySelector(".dm-progress-track");
+      const playedBar = overlay.querySelector(".dm-played-bar");
+      const bufferBar = overlay.querySelector(".dm-buffer-bar");
+      const previewCard = overlay.querySelector(".dm-preview-card");
+      const previewThumb = overlay.querySelector(".dm-preview-thumb");
+      const tooltip = overlay.querySelector(".dm-time-tooltip");
+      const timeDisplay = overlay.querySelector(".dm-time-display");
+      const volBtn = overlay.querySelector("#dm-vol-btn");
+      const volSlider = overlay.querySelector(".dm-vol-slider");
+      const volFill = overlay.querySelector(".dm-vol-fill");
+      const speedBtn = overlay.querySelector("#dm-speed");
+      const fsBtn = overlay.querySelector("#dm-fs");
+      const pipBtn = overlay.querySelector("#dm-pip");
+      const pulse = overlay.querySelector(".dm-center-pulse");
+      const spinner = overlay.querySelector(".dm-buffering-spinner");
+      const hud = overlay.querySelector(".dm-hud-popup");
+      const hudRing = overlay.querySelector(".dm-hud-ring-bar");
+      const hudIcon = overlay.querySelector(".dm-hud-icon");
+      const hudText = overlay.querySelector(".dm-hud-text");
+
+      let lastVol = parseFloat(localStorage.getItem("dm_player_volume")) || 0.5;
+      video.volume = Math.max(0, Math.min(1, lastVol));
+      video.muted = localStorage.getItem("dm_player_muted") === "true";
+
+      function syncVolUI() {
+        const v = video.muted ? 0 : video.volume;
+        volFill.style.width = `${Math.round(v * 100)}%`;
+        volBtn.innerHTML = v === 0 || video.muted ? ICONS.volMute : (v < 0.5 ? ICONS.volLow : ICONS.volHigh);
+      }
+      syncVolUI();
+
+      let hudTimer = null;
+      function showHud(icon, text, progress = null) {
+        hudIcon.innerHTML = icon;
+        hudText.textContent = text;
+        hudRing.style.strokeDashoffset = progress !== null ? String(226.2 * (1 - Math.max(0, Math.min(1, progress)))) : "0";
+        hud.classList.add("show");
+        clearTimeout(hudTimer);
+        hudTimer = setTimeout(() => hud.classList.remove("show"), 750);
+      }
+
+      function triggerPulse(icon) {
+        pulse.innerHTML = icon;
+        pulse.classList.remove("show");
+        void pulse.offsetWidth;
+        pulse.classList.add("show");
+      }
+
+      function setVol(lvl) {
+        const clamped = Math.max(0, Math.min(1, lvl));
+        video.volume = clamped;
+        video.muted = clamped === 0;
+        if (clamped > 0) lastVol = clamped;
+        localStorage.setItem("dm_player_volume", String(lastVol));
+        localStorage.setItem("dm_player_muted", String(video.muted));
+        syncVolUI();
+        showHud(video.muted ? ICONS.volMute : ICONS.volHigh, `${Math.round(clamped * 100)}%`, video.muted ? 0 : clamped);
+      }
+
+      const getDur = () => (Number.isFinite(video.duration) && video.duration > 0 ? video.duration : (video.seekable?.length ? video.seekable.end(video.seekable.length - 1) : 0));
+      let showRemaining = false;
+
+      function updateProgress() {
+        const dur = getDur(), cur = video.currentTime;
+        playedBar.style.width = dur > 0 ? `${(cur / dur) * 100}%` : "0%";
+        const curStr = showRemaining && dur > 0 ? `-${fmtTime(dur - cur)}` : fmtTime(cur);
+        timeDisplay.textContent = `${curStr} / ${fmtTime(dur)}`;
+      }
+
+      function togglePlay() {
+        if (video.paused) { video.play().catch(() => {}); playBtn.innerHTML = ICONS.pause; triggerPulse(ICONS.play); }
+        else { video.pause(); playBtn.innerHTML = ICONS.play; triggerPulse(ICONS.pause); }
+      }
+
+      function seekRelative(delta) {
+        const dur = getDur();
+        video.currentTime = Math.max(0, Math.min(dur || Infinity, video.currentTime + delta));
+        triggerPulse(delta > 0 ? ICONS.forward : ICONS.rewind);
+      }
+
+      const videoKey = getPlaybackKey(bypassUrl, streamUrl, titleText);
+      getSavedPos(videoKey).then((saved) => {
+        if (!saved || saved < 5 || !document.contains(overlay)) return;
+        const banner = document.createElement("div");
+        banner.className = "dm-resume-banner";
+        banner.innerHTML = `
+          <span>⏱️ Resume from <b>${fmtTime(saved)}</b>?</span>
+          <button class="dm-resume-btn dm-resume-btn-primary" id="dm-res-yes">▶ Resume</button>
+          <button class="dm-resume-btn dm-resume-btn-secondary" id="dm-res-no">↺ Restart</button>
+          <button class="dm-resume-close">✕</button>
+        `;
+        stage.appendChild(banner);
+        const rm = () => { banner.classList.add("dm-hidden"); setTimeout(() => banner.remove(), 250); };
+        banner.querySelector("#dm-res-yes").onclick = () => { video.currentTime = saved; video.play().catch(() => {}); rm(); };
+        banner.querySelector("#dm-res-no").onclick = () => { video.currentTime = 0; clearSavedPos(videoKey); rm(); };
+        banner.querySelector(".dm-resume-close").onclick = rm;
+        setTimeout(rm, 10000);
+      });
+
+      let hideTimer = null;
+      function pokeControls() {
+        topBar.classList.remove("dm-controls-hidden");
+        bottomBar.classList.remove("dm-controls-hidden");
+        clearTimeout(hideTimer);
+        if (!video.paused) hideTimer = setTimeout(() => {
+          topBar.classList.add("dm-controls-hidden");
+          bottomBar.classList.add("dm-controls-hidden");
+        }, 2500);
+      }
+      stage.addEventListener("mousemove", pokeControls);
+
+      let isScrubbing = false;
+      let lastPreviewSeek = 0;
+      let previewLoaded = false;
+      previewThumb.onloadeddata = () => previewThumb.classList.add("is-ready");
+      previewThumb.onerror = () => previewThumb.classList.remove("is-ready");
+
+      function ensurePreviewSrc() {
+        if (!previewLoaded) {
+          previewLoaded = true;
+          previewThumb.src = streamUrl;
+        }
+      }
+
+      function updatePreview(e) {
+        ensurePreviewSrc();
+        const r = track.getBoundingClientRect(), dur = getDur();
+        const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        if (dur > 0) {
+          const t = pct * dur;
+          tooltip.textContent = fmtTime(t);
+          const cardX = Math.max(75, Math.min(r.width - 75, e.clientX - r.left));
+          previewCard.style.left = `${cardX}px`;
+          previewCard.classList.add("show");
+
+          const now = Date.now();
+          if (now - lastPreviewSeek > 120 && previewThumb.classList.contains("is-ready")) {
+            lastPreviewSeek = now;
+            previewThumb.currentTime = t;
+          }
+        }
+      }
+
+      function scrubTrack(e) {
+        const r = track.getBoundingClientRect(), dur = getDur();
+        const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        if (dur > 0) video.currentTime = pct * dur;
+      }
+      track.onmousedown = (e) => { ensurePreviewSrc(); isScrubbing = true; track.classList.add("is-dragging"); scrubTrack(e); };
+      track.onmousemove = updatePreview;
+      track.onmouseleave = () => { if (!isScrubbing) previewCard.classList.remove("show"); };
+
+      let isVolScrubbing = false;
+      function scrubVol(e) {
+        const r = volSlider.getBoundingClientRect();
+        setVol((e.clientX - r.left) / r.width);
+      }
+      volSlider.onmousedown = (e) => { isVolScrubbing = true; scrubVol(e); };
+
+      window.addEventListener("mousemove", (e) => {
+        if (isScrubbing) { scrubTrack(e); updatePreview(e); }
+        if (isVolScrubbing) scrubVol(e);
+      });
+      window.addEventListener("mouseup", () => {
+        if (isScrubbing) { isScrubbing = false; track.classList.remove("is-dragging"); previewCard.classList.remove("show"); }
+        isVolScrubbing = false;
+      });
+
+      video.ontimeupdate = () => {
+        updateProgress();
+        if (getDur()) updateSavedPos(videoKey, video.currentTime, getDur());
+      };
+      video.onprogress = () => {
+        const dur = getDur();
+        if (dur && video.buffered.length) bufferBar.style.width = `${(video.buffered.end(video.buffered.length - 1) / dur) * 100}%`;
+      };
+      video.onplay = () => { playBtn.innerHTML = ICONS.pause; pokeControls(); };
+      video.onpause = () => { playBtn.innerHTML = ICONS.play; pokeControls(); };
+      video.onseeking = () => { spinner.style.display = "block"; };
+      video.onseeked = () => { spinner.style.display = "none"; };
+      video.onwaiting = () => { spinner.style.display = "block"; };
+      video.onplaying = () => { spinner.style.display = "none"; };
+      video.onerror = () => {
+        spinner.style.display = "none";
+        showDialog(
+          "Browser Codec Notice",
+          "This stream cannot be natively decoded in Chrome. Copy the MPV command or link to play in an external player.",
+          [
+            { label: "▶ Copy MPV", primary: true, onClick: (b) => copyText(b, `mpv "${streamUrl}"`, "✓ Copied MPV!"), close: false },
+            { label: "Copy Link", onClick: (b) => copyText(b, streamUrl) },
+            { label: "Close" }
+          ]
+        );
+      };
+
+      playBtn.onclick = togglePlay;
+      overlay.querySelector("#dm-rw").onclick = () => seekRelative(-10);
+      overlay.querySelector("#dm-ff").onclick = () => seekRelative(10);
+      timeDisplay.onclick = () => { showRemaining = !showRemaining; updateProgress(); };
+      volBtn.onclick = () => setVol(video.muted || video.volume === 0 ? (lastVol || 0.5) : 0);
+
+      const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+      let spdIdx = 2;
+      speedBtn.onclick = () => {
+        spdIdx = (spdIdx + 1) % SPEEDS.length;
+        video.playbackRate = SPEEDS[spdIdx];
+        speedBtn.textContent = `${SPEEDS[spdIdx]}x`;
+        showHud("⚡", `${SPEEDS[spdIdx]}x`, SPEEDS[spdIdx] / 2);
+      };
+
+      fsBtn.onclick = toggleFs;
+      document.onfullscreenchange = () => {
+        container.classList.toggle("is-fullscreen", isFs());
+        fsBtn.innerHTML = isFs() ? ICONS.fsExit : ICONS.fs;
+      };
+
+      if (document.pictureInPictureEnabled) {
+        pipBtn.onclick = async () => {
+          try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await video.requestPictureInPicture(); } catch {}
+        };
+      } else pipBtn.style.display = "none";
+
+      overlay.querySelector("#dm-help").onclick = () => {
+        showDialog("⌨️ Keyboard Shortcuts", `
+          <div class="dm-shortcuts-grid">
+            <div class="dm-shortcut-row"><span>Play / Pause</span><span class="dm-shortcut-key">Space / K</span></div>
+            <div class="dm-shortcut-row"><span>Seek ±10s</span><span class="dm-shortcut-key">← / → or J / L</span></div>
+            <div class="dm-shortcut-row"><span>Volume ±5%</span><span class="dm-shortcut-key">↑ / ↓ or Wheel</span></div>
+            <div class="dm-shortcut-row"><span>Mute</span><span class="dm-shortcut-key">M</span></div>
+            <div class="dm-shortcut-row"><span>Fullscreen</span><span class="dm-shortcut-key">F</span></div>
+            <div class="dm-shortcut-row"><span>Close</span><span class="dm-shortcut-key">Esc</span></div>
+          </div>
+        `, [{ label: "Close" }]);
+      };
+
+      stage.ondblclick = (e) => { if (e.target === video || e.target === stage) toggleFs(); };
+      stage.onclick = (e) => { if (e.target === video) togglePlay(); };
+      stage.onwheel = (e) => { e.preventDefault(); setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05)); };
+
+      Object.assign(KEY_MAP, {
+        " ": togglePlay, "k": togglePlay,
+        "arrowleft": () => seekRelative(-10), "j": () => seekRelative(-10),
+        "arrowright": () => seekRelative(10), "l": () => seekRelative(10),
+        "arrowup": () => setVol(video.volume + 0.05),
+        "arrowdown": () => setVol(video.volume - 0.05),
+        "m": () => setVol(video.muted ? (lastVol || 0.5) : 0),
+        "p": () => pipBtn?.click()
+      });
+
+      video.play().catch(() => {});
+    }
 
     function onKey(e) {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
       const k = e.key.toLowerCase();
-      if (k >= "0" && k <= "9" && getDur() > 0) {
+      if (!useWeb && k >= "0" && k <= "9" && getDur() > 0) {
         e.preventDefault(); e.stopPropagation(); video.currentTime = (Number(k) / 10) * getDur(); return;
       }
       if (KEY_MAP[k]) { e.preventDefault(); e.stopPropagation(); KEY_MAP[k](); }
     }
     window.addEventListener("keydown", onKey, true);
-
-    video.play().catch(() => {});
   }
 
   // Inject "Watch Online" buttons
@@ -550,7 +581,7 @@
           const res = await sendBg("resolve_stream", { url: href });
           btn.innerHTML = "▶ Watch Online";
           btn.disabled = false;
-          if (res?.success && res.streamUrl) openPlayer(res.streamUrl, href, title, btn);
+          if (res?.success && res.streamUrl) openPlayer(res.streamUrl, href, title, btn, res.hbplayUrl);
           else throw new Error(res?.error || "Stream unavailable");
         } catch (err) {
           btn.innerHTML = `❌ ${err.message || "Failed"}`;
@@ -596,6 +627,9 @@
     try {
       const res = await sendBg("full_bypass", { url: href });
       showStatus(a, res?.success ? "✅ Download started" : "❌ Failed", href);
+      if (res?.is10Gbps) {
+        showToast("10Gbps Server: Please do not pause download (resume not supported)");
+      }
       if (!res?.success) window.open(href, "_blank");
     } catch {
       showStatus(a, "❌ Error", href);

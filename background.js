@@ -9,7 +9,7 @@ const bypassCache = new Map();
 const activeBypasses = new Map();
 const CACHE_TTL = 3 * 3600 * 1000; // 3 Hours
 
-const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse)/i;
+const RE_BYPASS = /^https?:\/\/[^/]*(?:gyanigurus|kmhd|moviesbaba|gdflix|goflix|katmoviehd|katdrama|hubcloud|hubdrive|gamerxyt|sportverse|multicloudlinks)/i;
 const RE_STREAM = /href=["'](https?:\/\/[^"']*(?:busycdn|fastcdn|cloud-dl|workers(?:\.dev)?|cloudflarestorage|pixeldrain)[^"']+)["']/i;
 const RE_CLOUD = /href=["']([^"']*\/(?:cloud)\/[^"'\s]+)["']/i;
 const RE_HUB = /href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['"]/i;
@@ -21,7 +21,9 @@ const ready = chrome.storage.session.get(["bypassCache"]).then(({ bypassCache: c
   if (c && typeof c === "object") {
     const now = Date.now();
     for (const [k, v] of Object.entries(c)) {
-      if (v?.downloadUrl && now - (v.ts || 0) < CACHE_TTL) bypassCache.set(k, v);
+      if (/^[sd]:/.test(k) && (v?.downloadUrl || v?.streamUrl) && now - (v.ts || 0) < CACHE_TTL) {
+        if (!v?.downloadUrl?.includes("dl.php")) bypassCache.set(k, v);
+      }
     }
   }
 }).catch(() => {});
@@ -47,7 +49,10 @@ async function fetchFinalUrl(url, ms = 15000) {
   const tid = setTimeout(() => ctrl.abort(), ms);
   try {
     const res = await fetch(url, { signal: ctrl.signal });
-    return new URL(res.url).searchParams.get("url") || res.url;
+    const target = new URL(res.url);
+    const link = target.searchParams.get("link") || target.searchParams.get("url");
+    if (link && link.startsWith("http")) return link;
+    return res.url;
   } finally {
     clearTimeout(tid);
   }
@@ -55,7 +60,7 @@ async function fetchFinalUrl(url, ms = 15000) {
 
 function isDirectMedia(url) {
   if (!url || typeof url !== "string") return false;
-  if (/workers\.dev|cloudflarestorage|googleusercontent\.com|pixeldrain\.com\/api\/file\//i.test(url)) return true;
+  if (/workers\.dev|cloudflarestorage|googleusercontent\.com|pixeldrain\.(?:com|dev|org)\/api\/file\/|gpdl/i.test(url)) return true;
   if (/[?&]bytes=\d+/i.test(url)) return true;
   try {
     const { pathname } = new URL(url);
@@ -63,6 +68,66 @@ function isDirectMedia(url) {
   } catch {
     return false;
   }
+}
+
+async function extractGatewayUrls(html, isStream = false) {
+  let streamUrl = null, downloadUrl = null, hbplayUrl = null;
+
+  // 1. Pixeldrain / PixelServer for in-page player (supports resume & range requests)
+  const pxlVar = html.match(/var\s+pxl\s*=\s*["']([^"']+)["']/i);
+  if (pxlVar && !pxlVar[1].includes("negn6f")) streamUrl = pxlVar[1].trim();
+  if (!streamUrl) {
+    const pxlHref = html.match(/href=["'](https?:\/\/[^"'\s]*pixeldrain\.[^"'\s]+)["']/i);
+    if (pxlHref && !pxlHref[1].includes("negn6f")) streamUrl = pxlHref[1].trim();
+  }
+  if (streamUrl) streamUrl = streamUrl.replace(/\/u\/([a-zA-Z0-9_-]+)/, "/api/file/$1");
+
+  // Web Player URL (hbplay)
+  const hbMatch = html.match(/href=["'](https?:\/\/[^"'\s]*hbplay\.pages\.dev[^"'\s]*)["']/i);
+  if (hbMatch) hbplayUrl = hbMatch[1].replace(/&amp;/g, "&");
+
+  // Fallback stream: hbplay (base64 R2 URL) or direct Cloudflare R2
+  if (!streamUrl && hbplayUrl) {
+    const uParam = new URL(hbplayUrl).searchParams.get("u");
+    if (uParam) {
+      try { streamUrl = atob(uParam); } catch {}
+    }
+  }
+  if (!streamUrl) {
+    const r2 = html.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|r2\.cloudflarestorage\.com)[^"'\s]*)["']/i);
+    if (r2) streamUrl = r2[1].replace(/&amp;/g, "&");
+  }
+
+  // If resolving for streaming, return immediately without waiting for slow 10Gbps redirect
+  if (isStream && streamUrl) {
+    return { streamUrl, hbplayUrl };
+  }
+
+  // 2. Server 10Gbps (Google Video stream via GPDL redirect)
+  const dl10g = html.match(/href=["'](https?:\/\/[^"'\s]*(?:gpdl)[^"'\s]*)["']/i) ||
+                html.match(/href=["'](https?:\/\/[^"'\s]+)["'][^>]*>(?:(?!<\/a>)[\s\S])*10Gbps/i);
+  if (dl10g) {
+    try {
+      const final10g = await fetchFinalUrl(dl10g[1].replace(/&amp;/g, "&"), 20000);
+      if (final10g) {
+        if (final10g.includes("dl.php")) {
+          const unwrapped = new URL(final10g).searchParams.get("link");
+          if (unwrapped && unwrapped.startsWith("http")) downloadUrl = unwrapped;
+        } else {
+          downloadUrl = final10g;
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback download servers: FSL (Cloudflare R2) or PixelDrain (never let dl.php slip through)
+  if (!downloadUrl) {
+    const r2 = html.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|r2\.cloudflarestorage\.com)[^"'\s]*)["']/i);
+    if (r2) downloadUrl = r2[1].replace(/&amp;/g, "&");
+  }
+  if (!downloadUrl) downloadUrl = streamUrl;
+
+  return streamUrl || downloadUrl ? { streamUrl, downloadUrl, hbplayUrl } : null;
 }
 
 async function resolveCloudWorker(html, baseUrl) {
@@ -104,38 +169,49 @@ async function resolveGDFlix(html, pageUrl, onProgress) {
       try { finalUrl = await fetchFinalUrl(worker.replace(/&amp;/g, "&")); } catch {}
     }
   }
-  return encodeURI(finalUrl);
+  const u = encodeURI(finalUrl);
+  return { streamUrl: u, downloadUrl: u };
 }
 
-async function resolveHubCloud(hubUrl, onProgress) {
+async function resolveHubCloud(hubUrl, onProgress, isStream = false) {
   onProgress?.("⏳ Connecting to HubCloud…");
   let current = hubUrl;
   if (/hubdrive/i.test(current)) {
     try {
       const driveHtml = await fetchHTML(current);
-      const m = driveHtml.match(RE_HUB);
+      const m = driveHtml.match(/href=["'](https?:\/\/[^"'\s]*hubcloud\.[^"'\s]*\/drive\/[^"'\s]+)["']/i) ||
+                driveHtml.match(/href=["'](https?:\/\/[^"'\s]*hubcloud\.[^"'\s]*)["']/i);
       if (m) current = m[1];
     } catch {}
   }
   const html = await fetchHTML(current);
   const direct = html.match(RE_STREAM);
-  if (direct) return direct[1];
+  if (direct) {
+    const u = direct[1].replace(/\/u\/([a-zA-Z0-9_-]+)/, "/api/file/$1");
+    return { streamUrl: u, downloadUrl: u };
+  }
 
-  const gateway = html.match(RE_GATEWAY);
+  const gateway = html.match(/href=["'](https?:\/\/[^"'\s]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s]*)['"]/i) ||
+                  html.match(/<a[^>]+id=["']download["'][^>]*href=["']([^"']+)["']/i) ||
+                  html.match(/href=["'](https?:\/\/[^"'\s]+)["'][^>]*>(?:(?!<\/a>)[\s\S])*Generate Direct Download Link/i);
   if (gateway) {
     onProgress?.("⏳ Resolving gateway link…");
     const gHtml = await fetchHTML(gateway[1]);
-    return gHtml.match(RE_STREAM)?.[1] || null;
+    return await extractGatewayUrls(gHtml, isStream);
   }
   return null;
 }
 
-async function resolveFullChain(url, onProgress) {
+async function resolveFullChain(url, onProgress, isStream = false) {
   await ready;
-  const cached = bypassCache.get(url);
-  if (cached && Date.now() - (cached.ts || 0) < CACHE_TTL) return { success: true, downloadUrl: cached.downloadUrl };
+  const cacheKey = `${isStream ? "s" : "d"}:${url}`;
+  const cached = bypassCache.get(cacheKey);
+  if (cached && Date.now() - (cached.ts || 0) < CACHE_TTL) {
+    if (isStream && cached.streamUrl) return { success: true, ...cached };
+    if (!isStream && cached.downloadUrl) return { success: true, ...cached };
+  }
 
-  let finalUrl = "";
+  let final = null;
   if (/kmhd/i.test(url)) {
     const fileId = url.match(/\/file\/([a-zA-Z0-9_-]+)/)?.[1];
     if (!fileId) throw new Error("Invalid KMHD link");
@@ -147,47 +223,74 @@ async function resolveFullChain(url, onProgress) {
       const data = res.ok ? await res.json() : null;
       if (data?.linkId) {
         const html = await fetchHTML(data.linkId);
-        finalUrl = await resolveGDFlix(html, data.linkId, onProgress);
+        final = await resolveGDFlix(html, data.linkId, onProgress);
       }
     } catch {}
 
-    if (!finalUrl) {
+    if (!final) {
       onProgress?.("⏳ Trying HubDrive fallback…");
       const res = await fetch(`${origin}/api/touchme/${fileId}?c=hubdrive_res`, { method: "POST" });
       const data = res.ok ? await res.json() : null;
       if (!data?.linkId) throw new Error("KMHD link resolution failed");
-      finalUrl = await resolveHubCloud(data.linkId, onProgress);
+      final = await resolveHubCloud(data.linkId, onProgress, isStream);
     }
   } else if (/hubcloud|hubdrive|gamerxyt|sportverse/i.test(url)) {
-    finalUrl = await resolveHubCloud(url, onProgress);
+    final = await resolveHubCloud(url, onProgress, isStream);
   } else if (/gdflix|goflix/i.test(url)) {
     onProgress?.("⏳ Connecting to GDFlix…");
-    finalUrl = await resolveGDFlix(await fetchHTML(url), url, onProgress);
+    final = await resolveGDFlix(await fetchHTML(url), url, onProgress);
   } else {
     onProgress?.("⏳ Connecting to Gyanigurus…");
     let html = await fetchHTML(url);
     if (html.includes("<input")) {
       const body = new URLSearchParams();
-      for (const m of html.matchAll(/<input[^>]+name=["']([^"']+)["'][^>]*value=["']([^"']*)["']/gi)) {
-        body.append(m[1], m[2]);
+      for (const tag of html.matchAll(/<input[^>]+>/gi)) {
+        const name = tag[0].match(/name=["']([^"']+)["']/i)?.[1];
+        const val = tag[0].match(/value=["']([^"']*)["']/i)?.[1] ?? "";
+        if (name) body.append(name, val);
       }
-      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-      html = await res.text();
+      if (Array.from(body.keys()).length) {
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+        html = await res.text();
+      }
     }
-    const hub = html.match(RE_HUB);
+    const hub = html.match(/href=["'](https?:\/\/[^"'\s]*(?:hubcloud\.[^"'\s]*\/drive\/[^"'\s]+))["']/i) ||
+                html.match(/href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['"]/i);
     if (hub) {
-      try { finalUrl = await resolveHubCloud(hub[1], onProgress); } catch {}
+      try { final = await resolveHubCloud(hub[1], onProgress, isStream); } catch {}
     }
-    if (!finalUrl) {
+    if (!final) {
       const gd = html.match(RE_GDFLIX);
-      if (gd) finalUrl = await resolveGDFlix(await fetchHTML(gd[1]), gd[1], onProgress);
+      if (gd) final = await resolveGDFlix(await fetchHTML(gd[1]), gd[1], onProgress);
     }
   }
 
-  if (!finalUrl) throw new Error("Could not resolve final download URL");
-  bypassCache.set(url, { downloadUrl: finalUrl, ts: Date.now() });
-  persistState();
-  return { success: true, downloadUrl: finalUrl };
+  if (isStream) {
+    if (!final?.streamUrl) throw new Error("Could not resolve stream URL");
+    const result = {
+      streamUrl: final.streamUrl,
+      hbplayUrl: final.hbplayUrl || null,
+      ts: Date.now()
+    };
+    bypassCache.set(cacheKey, result);
+    persistState();
+    return { success: true, ...result };
+  } else {
+    if (!final?.downloadUrl) throw new Error("Could not resolve final download URL");
+    let dl = final.downloadUrl;
+    if (dl.includes("dl.php")) {
+      const link = new URL(dl).searchParams.get("link");
+      if (link && link.startsWith("http")) dl = link;
+    }
+    const result = {
+      downloadUrl: dl,
+      is10Gbps: /gpdl|googleusercontent|workers\.dev/i.test(dl),
+      ts: Date.now()
+    };
+    bypassCache.set(cacheKey, result);
+    persistState();
+    return { success: true, ...result };
+  }
 }
 
 async function resolvePackChain(packUrl, providedFileUrls = [], onProgress) {
@@ -223,8 +326,9 @@ async function resolvePackChain(packUrl, providedFileUrls = [], onProgress) {
       onProgress?.(`⏳ Episode (${count + 1}/${fileUrls.length})…`);
       try {
         const res = await resolveFullChain(u);
-        if (res?.downloadUrl) {
-          chrome.downloads.download({ url: res.downloadUrl });
+        const dl = res?.downloadUrl || res?.streamUrl;
+        if (dl) {
+          chrome.downloads.download({ url: dl });
           count++;
         }
       } catch {}
@@ -243,19 +347,35 @@ function handleBypassRequest(url, tabId, isStream, sendResponse) {
     sendResponse({ success: false, error: "Invalid or unsupported URL" });
     return;
   }
-  let promise = activeBypasses.get(url);
+  const key = `${isStream ? "s" : "d"}:${url}`;
+  let promise = activeBypasses.get(key);
   if (!promise) {
-    promise = resolveFullChain(url, (msg) => sendProgress(tabId, url, msg));
-    activeBypasses.set(url, promise);
-    promise.finally(() => activeBypasses.delete(url));
+    promise = resolveFullChain(url, (msg) => sendProgress(tabId, url, msg), isStream);
+    activeBypasses.set(key, promise);
+    promise.finally(() => activeBypasses.delete(key));
   }
   promise
     .then((res) => {
       sendProgress(tabId, url, isStream ? "✅ Stream ready" : "✅ Download started");
-      if (isStream) sendResponse({ success: true, streamUrl: res.downloadUrl });
-      else {
-        chrome.downloads.download({ url: res.downloadUrl });
-        sendResponse({ success: true });
+      if (isStream) {
+        sendResponse({ success: true, streamUrl: res.streamUrl, hbplayUrl: res.hbplayUrl });
+      } else {
+        let dl = res.downloadUrl;
+        if (dl && dl.includes("dl.php")) {
+          const unwrapped = new URL(dl).searchParams.get("link");
+          if (unwrapped && unwrapped.startsWith("http")) dl = unwrapped;
+        }
+        const is10G = /gpdl|googleusercontent|workers\.dev/i.test(dl);
+        chrome.downloads.download({ url: dl }, (id) => {
+          if (chrome.runtime.lastError) console.warn("Download error:", chrome.runtime.lastError.message);
+        });
+        if (is10G && tabId) {
+          chrome.tabs.sendMessage(tabId, {
+            action: "dm_toast",
+            message: "10Gbps Server: Please do not pause download (resume not supported)"
+          }).catch(() => {});
+        }
+        sendResponse({ success: true, is10Gbps: is10G });
       }
     })
     .catch((err) => {
@@ -288,10 +408,11 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 const WORD_MAP = { "4k": "4K", "web-dl": "WEB-DL", "webdl": "WEB-DL", "web-hdrip": "WEB-HDRip", "bluray": "BluRay", "webrip": "WEB-Rip", "uhd": "UHD" };
 
 function cleanFilename(filename) {
-  const dotIdx = filename.lastIndexOf(".");
-  if (dotIdx === -1) return filename;
-  const ext = filename.slice(dotIdx);
-  let base = filename.slice(0, dotIdx).replace(/\s*\(\d+\)$/, "").replace(/[\[\]\(\)\{\}]/g, " ");
+  let name = filename.replace(/\.(mkv|mp4|avi|webm|mov|m4v)\.zip$/i, ".$1");
+  const dotIdx = name.lastIndexOf(".");
+  if (dotIdx === -1) return name;
+  const ext = name.slice(dotIdx);
+  let base = name.slice(0, dotIdx).replace(/\s*\(\d+\)$/, "").replace(/[\[\]\(\)\{\}]/g, " ");
   let epTag = "";
 
   base = base.replace(/^EP((\.\d+)+)\./i, (_, grp) => {
