@@ -94,7 +94,7 @@ async function extractGatewayUrls(html, isStream = false) {
   if (!streamUrl && r2Url) streamUrl = r2Url;
 
   // If resolving for streaming, return immediately without waiting for slow 10Gbps redirect
-  if (isStream && streamUrl) {
+  if (isStream && (streamUrl || hbplayUrl)) {
     return { streamUrl, hbplayUrl };
   }
 
@@ -258,9 +258,9 @@ async function resolveFullChain(url, onProgress, isStream = false) {
   }
 
   if (isStream) {
-    if (!final?.streamUrl) throw new Error("Could not resolve stream URL");
+    if (!final?.streamUrl && !final?.hbplayUrl) throw new Error("Could not resolve stream URL");
     const result = {
-      streamUrl: final.streamUrl,
+      streamUrl: final.streamUrl || null,
       hbplayUrl: final.hbplayUrl || null,
       ts: Date.now()
     };
