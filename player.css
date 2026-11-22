@@ -20,7 +20,7 @@
 .dm-video-stage {
   position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden;
 }
-.dm-video-el { width: 100%; height: 100%; object-fit: contain; background: #000; outline: none; }
+.dm-video-el { width: 100%; height: 100%; background: #000; outline: none; }
 
 /* Navigation & Controls Overlay */
 .dm-floating-top {

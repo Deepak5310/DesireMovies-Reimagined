@@ -4,6 +4,8 @@
   if (window.__desiremoviesInjected) return;
   window.__desiremoviesInjected = true;
 
+  const SKIP_TAGS = new Set(["INPUT", "TEXTAREA"]);
+
   // Web Player frame helper (mouse wheel volume, HUD toast, and keyboard control)
   if (location.hostname.includes("hbplay.pages.dev")) {
     let toastTimer = null;
@@ -71,13 +73,33 @@
       }
     }
 
+    // Unified key dispatch — single source of truth for both keydown and postMessage
+    function dispatch(key) {
+      const k = key.toLowerCase();
+      if (k === " " || k === "k") togglePlay();
+      else if (k === "arrowleft" || k === "j") seekRel(-10);
+      else if (k === "arrowright" || k === "l") seekRel(10);
+      else if (k === "arrowup") adjustVol(0.05);
+      else if (k === "arrowdown") adjustVol(-0.05);
+      else if (k === "m") toggleMute();
+      else if (k === "p") {
+        const v = getVid();
+        if (v && document.pictureInPictureEnabled)
+          document.pictureInPictureElement ? document.exitPictureInPicture?.().catch(() => {}) : v.requestPictureInPicture?.().catch(() => {});
+      } else if (k >= "0" && k <= "9") {
+        const v = getVid();
+        if (v?.duration) v.currentTime = (Number(k) / 10) * v.duration;
+      } else return false;
+      return true;
+    }
+
     window.addEventListener("wheel", (e) => {
       e.preventDefault();
       adjustVol(e.deltaY < 0 ? 0.05 : -0.05);
     }, { passive: false });
 
     window.addEventListener("keydown", (e) => {
-      if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+      if (SKIP_TAGS.has(document.activeElement?.tagName)) return;
       const k = e.key.toLowerCase();
       if (k === "escape") {
         if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -85,51 +107,16 @@
       } else if (k === "f") {
         e.preventDefault();
         window.parent?.postMessage({ action: "dm_toggle_fs" }, "*");
-      } else if (k === " " || k === "k") {
-        e.preventDefault(); togglePlay();
-      } else if (k === "arrowleft" || k === "j") {
-        e.preventDefault(); seekRel(-10);
-      } else if (k === "arrowright" || k === "l") {
-        e.preventDefault(); seekRel(10);
-      } else if (k === "arrowup") {
-        e.preventDefault(); adjustVol(0.05);
-      } else if (k === "arrowdown") {
-        e.preventDefault(); adjustVol(-0.05);
-      } else if (k === "m") {
-        e.preventDefault(); toggleMute();
-      } else if (k === "p") {
+      } else if (dispatch(e.key)) {
         e.preventDefault();
-        const v = getVid();
-        if (v && document.pictureInPictureEnabled) {
-          document.pictureInPictureElement ? document.exitPictureInPicture?.().catch(() => {}) : v.requestPictureInPicture?.().catch(() => {});
-        }
-      } else if (k >= "0" && k <= "9") {
-        const v = getVid();
-        if (v?.duration) { e.preventDefault(); v.currentTime = (Number(k) / 10) * v.duration; }
       }
     }, true);
 
     window.addEventListener("message", (e) => {
+      if (e.source !== window.parent) return;
       const act = e.data?.action;
       if (act === "dm_wheel") adjustVol(e.data.deltaY < 0 ? 0.05 : -0.05);
-      else if (act === "dm_key") {
-        const k = (e.data.key || "").toLowerCase();
-        if (k === " " || k === "k") togglePlay();
-        else if (k === "arrowleft" || k === "j") seekRel(-10);
-        else if (k === "arrowright" || k === "l") seekRel(10);
-        else if (k === "arrowup") adjustVol(0.05);
-        else if (k === "arrowdown") adjustVol(-0.05);
-        else if (k === "m") toggleMute();
-        else if (k === "p") {
-          const v = getVid();
-          if (v && document.pictureInPictureEnabled) {
-            document.pictureInPictureElement ? document.exitPictureInPicture?.().catch(() => {}) : v.requestPictureInPicture?.().catch(() => {});
-          }
-        } else if (k >= "0" && k <= "9") {
-          const v = getVid();
-          if (v?.duration) v.currentTime = (Number(k) / 10) * v.duration;
-        }
-      }
+      else if (act === "dm_key") dispatch(e.data.key || "");
     });
 
     return;
@@ -154,7 +141,8 @@
     const toast = document.createElement("div");
     toast.id = "dm-toast";
     toast.className = "dm-toast";
-    toast.innerHTML = `<span class="dm-toast-icon">⚡</span><span>${text}</span>`;
+    toast.innerHTML = `<span class="dm-toast-icon">⚡</span><span></span>`;
+    toast.lastElementChild.textContent = text;
     (document.body || document.documentElement).appendChild(toast);
     requestAnimationFrame(() => toast.classList.add("show"));
     setTimeout(() => {
@@ -172,7 +160,7 @@
     if (msg.action !== "bypass_progress") return;
     const { url, statusText } = msg;
     const packBtn = document.getElementById("btn-dl-all-episodes");
-    if (packBtn?.disabled && (/\/pack\//i.test(url) || url === location.href)) packBtn.innerHTML = statusText;
+    if (packBtn?.disabled && (/\/pack\//i.test(url) || url === location.href)) packBtn.textContent = statusText;
 
     const anchor = activeAnchors.get(url) || document.querySelector(`a[href="${CSS.escape(url)}"]`);
     if (anchor?.dataset.bypassing) anchor.innerHTML = `<span style="opacity:0.9">${statusText}</span>`;
@@ -263,33 +251,31 @@
     };
 
     function onMessage(e) {
+      if (e.source !== iframe?.contentWindow) return;
       if (e.data?.action === "dm_close") close();
       else if (e.data?.action === "dm_toggle_fs") toggleFs();
     }
     window.addEventListener("message", onMessage);
 
+    const onFsChange = () => container.classList.toggle("is-fullscreen", isFs());
+    document.addEventListener("fullscreenchange", onFsChange);
+
     function close() {
       if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("message", onMessage);
-      document.onfullscreenchange = null;
+      document.removeEventListener("fullscreenchange", onFsChange);
       document.body.style.overflow = prevOverflow;
       iframe?.remove();
       overlay.remove();
       openerBtn?.focus();
     }
 
-    overlay.onclick = (e) => {
-      if (e.target === overlay) close();
-    };
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
 
     overlay.querySelector("#dm-btn-close").onclick = close;
     overlay.querySelector("#dm-btn-copy").onclick = function () { copyText(this, streamUrl || webUrl); };
     overlay.querySelector("#dm-btn-tab").onclick = () => window.open(webUrl, "_blank");
-
-    document.onfullscreenchange = () => {
-      container.classList.toggle("is-fullscreen", isFs());
-    };
 
     overlay.onwheel = (e) => {
       e.preventDefault();
@@ -300,7 +286,7 @@
     iframe.onload = () => { try { iframe.focus(); } catch {} };
 
     function onKey(e) {
-      if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+      if (SKIP_TAGS.has(document.activeElement?.tagName)) return;
       const k = e.key.toLowerCase();
       if (k === "f") {
         e.preventDefault(); e.stopPropagation();
@@ -352,7 +338,7 @@
   }
 
   // Episode Pack Downloader
-  if (/\/pack\//i.test(location.pathname) || /\/pack\//i.test(location.href)) {
+  if (/\/pack\//i.test(location.pathname)) {
     const injectPack = () => {
       if (document.getElementById("btn-dl-all-episodes")) return;
       const btn = document.createElement("button");

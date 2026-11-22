@@ -86,10 +86,10 @@ async function extractGatewayUrls(html, isStream = false) {
   // Fallback stream: hbplay (base64 R2 URL) or direct Cloudflare R2
   const r2Url = html.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|r2\.cloudflarestorage\.com)[^"'\s]*)["']/i)?.[1]?.replace(/&amp;/g, "&");
   if (!streamUrl && hbplayUrl) {
-    const uParam = new URL(hbplayUrl).searchParams.get("u");
-    if (uParam) {
-      try { streamUrl = atob(uParam); } catch {}
-    }
+    try {
+      const uParam = new URL(hbplayUrl).searchParams.get("u");
+      if (uParam) streamUrl = atob(uParam);
+    } catch {}
   }
   if (!streamUrl && r2Url) streamUrl = r2Url;
 
