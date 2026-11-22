@@ -25,7 +25,16 @@
       }, 700);
     }
 
-    const getVid = () => document.querySelector("video") || document.getElementById("videoPlayer");
+    const getVid = () => {
+      const v = document.querySelector("video") || document.getElementById("videoPlayer");
+      if (v && !v.__dmInit) {
+        v.__dmInit = true;
+        v.addEventListener("volumechange", () => {
+          showToast(v.muted || v.volume === 0 ? "🔇 Muted" : `🔊 ${Math.round(v.volume * 100)}%`);
+        });
+      }
+      return v;
+    };
 
     function adjustVol(delta) {
       const v = getVid();
@@ -53,16 +62,6 @@
       if (!v) return;
       v.muted = !v.muted;
     }
-
-    function initVid() {
-      const v = getVid();
-      if (!v || v.__dmInit) return;
-      v.__dmInit = true;
-      v.addEventListener("volumechange", () => {
-        showToast(v.muted || v.volume === 0 ? "🔇 Muted" : `🔊 ${Math.round(v.volume * 100)}%`);
-      });
-    }
-    initVid();
 
     window.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -99,7 +98,7 @@
         else if (k === "p") {
           const v = getVid();
           if (v && document.pictureInPictureEnabled) {
-            document.pictureInPictureElement ? document.exitPictureInPicture?.() : v.requestPictureInPicture?.();
+            document.pictureInPictureElement ? document.exitPictureInPicture?.().catch(() => {}) : v.requestPictureInPicture?.().catch(() => {});
           }
         } else if (k >= "0" && k <= "9") {
           const v = getVid();
@@ -142,30 +141,26 @@
   let memoryStore = null;
   let flushTimer = null;
 
-  function loadStore() {
-    if (memoryStore) return Promise.resolve(memoryStore);
-    return new Promise((resolve) => {
-      const finish = (data) => {
-        const now = Date.now(), clean = {};
-        for (const [k, v] of Object.entries(data || {})) {
-          if (v?.time && now - (v.updatedAt || 0) < TTL_MS) clean[k] = v;
-        }
-        memoryStore = clean;
-        resolve(memoryStore);
-      };
-      if (chrome?.storage?.local) chrome.storage.local.get([CACHE_KEY], (res) => finish(res?.[CACHE_KEY]));
-      else {
-        try { finish(JSON.parse(localStorage.getItem(CACHE_KEY) || "{}")); } catch { finish({}); }
+  async function loadStore() {
+    if (memoryStore) return memoryStore;
+    try {
+      const res = await chrome.storage.local.get([CACHE_KEY]);
+      const now = Date.now(), clean = {};
+      for (const [k, v] of Object.entries(res?.[CACHE_KEY] || {})) {
+        if (v?.time && now - (v.updatedAt || 0) < TTL_MS) clean[k] = v;
       }
-    });
+      return (memoryStore = clean);
+    } catch {
+      return (memoryStore = {});
+    }
   }
 
   function saveStore() {
     clearTimeout(flushTimer);
     flushTimer = setTimeout(() => {
-      if (!memoryStore) return;
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(memoryStore)); } catch {}
-      if (chrome?.storage?.local) chrome.storage.local.set({ [CACHE_KEY]: memoryStore }).catch(() => {});
+      if (memoryStore && chrome.runtime?.id) {
+        chrome.storage.local.set({ [CACHE_KEY]: memoryStore }).catch(() => {});
+      }
     }, 1500);
   }
 
@@ -244,7 +239,6 @@
     fsExit: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`,
     pip: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 1.98 2 1.98h18c1.1 0 2-.88 2-1.98V5c0-1.1-.9-2-2-2zm0 16.01H3V4.98h18v14.03z"/></svg>`,
     copy: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`,
-    dl: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>`,
     close: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`,
     kb: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 4H5v-2h2v2zm0-3H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 7h-2v-2h2v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>`
   };
@@ -377,10 +371,14 @@
     }
     window.addEventListener("message", onMessage);
 
+    let onScrubMove, onScrubUp;
+
     function close() {
       if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document).catch(() => {});
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("message", onMessage);
+      if (onScrubMove) window.removeEventListener("mousemove", onScrubMove);
+      if (onScrubUp) window.removeEventListener("mouseup", onScrubUp);
       document.onfullscreenchange = null;
       document.body.style.overflow = prevOverflow;
       overlay.querySelector(".dm-web-frame")?.remove();
@@ -414,14 +412,12 @@
       "escape": () => { modal.style.display === "flex" ? (modal.style.display = "none") : (isFs() ? toggleFs() : close()); }
     };
 
+    const iframe = useWeb ? overlay.querySelector(".dm-web-frame") : null;
     if (useWeb) {
       overlay.onwheel = (e) => {
         e.preventDefault();
-        const iframe = overlay.querySelector(".dm-web-frame");
         iframe?.contentWindow?.postMessage({ action: "dm_wheel", deltaY: e.deltaY }, "*");
       };
-
-      const iframe = overlay.querySelector(".dm-web-frame");
       if (iframe) {
         setTimeout(() => { try { iframe.focus(); } catch {} }, 150);
         iframe.onload = () => { try { iframe.focus(); } catch {} };
@@ -429,15 +425,14 @@
     }
 
     if (!useWeb) {
-      overlay.onwheel = (e) => {
-        e.preventDefault();
-        const video = overlay.querySelector(".dm-video-el");
-        if (video) setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05));
-      };
-
       const stage = overlay.querySelector(".dm-video-stage");
       const video = overlay.querySelector(".dm-video-el");
       const playBtn = overlay.querySelector("#dm-play");
+
+      overlay.onwheel = (e) => {
+        e.preventDefault();
+        setVol(video.volume + (e.deltaY < 0 ? 0.05 : -0.05));
+      };
       const topBar = overlay.querySelector(".dm-floating-top");
       const bottomBar = overlay.querySelector(".dm-floating-bottom");
       const track = overlay.querySelector(".dm-progress-track");
@@ -599,14 +594,16 @@
       }
       volSlider.onmousedown = (e) => { isVolScrubbing = true; scrubVol(e); };
 
-      window.addEventListener("mousemove", (e) => {
+      onScrubMove = (e) => {
         if (isScrubbing) { scrubTrack(e); updatePreview(e); }
         if (isVolScrubbing) scrubVol(e);
-      });
-      window.addEventListener("mouseup", () => {
+      };
+      onScrubUp = () => {
         if (isScrubbing) { isScrubbing = false; track.classList.remove("is-dragging"); previewCard.classList.remove("show"); }
         isVolScrubbing = false;
-      });
+      };
+      window.addEventListener("mousemove", onScrubMove);
+      window.addEventListener("mouseup", onScrubUp);
 
       video.ontimeupdate = () => {
         updateProgress();
@@ -687,21 +684,13 @@
       video.play().catch(() => {});
     }
 
-    const FORWARD_KEYS = new Set([
-      " ", "k", "j", "l", "p",
-      "arrowleft", "arrowright", "arrowup", "arrowdown",
-      "m",
-      "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
-    ]);
-
     function onKey(e) {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
       const k = e.key.toLowerCase();
       if (KEY_MAP[k]) { e.preventDefault(); e.stopPropagation(); KEY_MAP[k](); return; }
       if (useWeb) {
-        if (FORWARD_KEYS.has(k)) {
+        if (/^[ 0-9jklmp]$|^arrow/i.test(k)) {
           e.preventDefault(); e.stopPropagation();
-          const iframe = overlay.querySelector(".dm-web-frame");
           iframe?.contentWindow?.postMessage({ action: "dm_key", key: e.key }, "*");
         }
       } else if (k >= "0" && k <= "9" && getDur() > 0) {
@@ -779,13 +768,13 @@
     const restore = showStatus(a, "⏳ Connecting…", href);
     try {
       const res = await sendBg("full_bypass", { url: href });
-      showStatus(a, res?.success ? "✅ Download started" : "❌ Failed", href);
+      a.innerHTML = `<span style="opacity:0.8">${res?.success ? "✅ Download started" : "❌ Failed"}</span>`;
       if (res?.is10Gbps) {
         showToast("10Gbps Server: Please do not pause download (resume not supported)");
       }
       if (!res?.success) window.open(href, "_blank");
     } catch {
-      showStatus(a, "❌ Error", href);
+      a.innerHTML = `<span style="opacity:0.8">❌ Error</span>`;
       window.open(href, "_blank");
     } finally {
       setTimeout(restore, 2500);
@@ -793,5 +782,9 @@
   });
 
   injectWatchButtons();
-  new MutationObserver(injectWatchButtons).observe(document.body || document.documentElement, { childList: true, subtree: true });
+  let moTimer = null;
+  new MutationObserver(() => {
+    if (moTimer) return;
+    moTimer = setTimeout(() => { moTimer = null; injectWatchButtons(); }, 200);
+  }).observe(document.body || document.documentElement, { childList: true, subtree: true });
 })();

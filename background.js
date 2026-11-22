@@ -84,16 +84,14 @@ async function extractGatewayUrls(html, isStream = false) {
   if (hbMatch) hbplayUrl = hbMatch[1].replace(/&amp;/g, "&");
 
   // Fallback stream: hbplay (base64 R2 URL) or direct Cloudflare R2
+  const r2Url = html.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|r2\.cloudflarestorage\.com)[^"'\s]*)["']/i)?.[1]?.replace(/&amp;/g, "&");
   if (!streamUrl && hbplayUrl) {
     const uParam = new URL(hbplayUrl).searchParams.get("u");
     if (uParam) {
       try { streamUrl = atob(uParam); } catch {}
     }
   }
-  if (!streamUrl) {
-    const r2 = html.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|r2\.cloudflarestorage\.com)[^"'\s]*)["']/i);
-    if (r2) streamUrl = r2[1].replace(/&amp;/g, "&");
-  }
+  if (!streamUrl && r2Url) streamUrl = r2Url;
 
   // If resolving for streaming, return immediately without waiting for slow 10Gbps redirect
   if (isStream && streamUrl) {
@@ -118,10 +116,7 @@ async function extractGatewayUrls(html, isStream = false) {
   }
 
   // Fallback download servers: FSL (Cloudflare R2) or PixelDrain (never let dl.php slip through)
-  if (!downloadUrl) {
-    const r2 = html.match(/href=["'](https?:\/\/[^"'\s]*(?:cloudflarestorage|r2\.cloudflarestorage\.com)[^"'\s]*)["']/i);
-    if (r2) downloadUrl = r2[1].replace(/&amp;/g, "&");
-  }
+  if (!downloadUrl && r2Url) downloadUrl = r2Url;
   if (!downloadUrl) downloadUrl = streamUrl;
 
   return streamUrl || downloadUrl ? { streamUrl, downloadUrl, hbplayUrl } : null;
@@ -188,7 +183,7 @@ async function resolveHubCloud(hubUrl, onProgress, isStream = false) {
     return { streamUrl: u, downloadUrl: u };
   }
 
-  const gateway = html.match(/href=["'](https?:\/\/[^"'\s]*(?:gamerxyt|sportverse|hubcloud\.php)[^"'\s]*)['\"]/i) ||
+  const gateway = html.match(RE_GATEWAY) ||
                   html.match(/<a[^>]+id=["']download["'][^>]*href=["']([^"']+)["']/i) ||
                   html.match(/href=["'](https?:\/\/[^"'\s]+)["'][^>]*>(?:(?!<\/a>)[\s\S])*Generate Direct Download Link/i);
   if (gateway) {
@@ -252,7 +247,7 @@ async function resolveFullChain(url, onProgress, isStream = false) {
       }
     }
     const hub = html.match(/href=["'](https?:\/\/[^"'\s]*(?:hubcloud\.[^"'\s]*\/drive\/[^"'\s]+))["']/i) ||
-                html.match(/href=["'](https?:\/\/[^"'\s]*(?:hubcloud|hubdrive)[^"'\s]*)['\"]/i);
+                html.match(RE_HUB);
     if (hub) {
       try { final = await resolveHubCloud(hub[1], onProgress, isStream); } catch {}
     }
@@ -325,7 +320,9 @@ async function resolvePackChain(packUrl, providedFileUrls = [], onProgress) {
         const res = await resolveFullChain(u);
         const dl = res?.downloadUrl || res?.streamUrl;
         if (dl) {
-          chrome.downloads.download({ url: dl });
+          chrome.downloads.download({ url: dl }, (id) => {
+            if (chrome.runtime.lastError) console.warn("Pack download error:", chrome.runtime.lastError.message);
+          });
           count++;
         }
       } catch {}
@@ -400,7 +397,7 @@ function cleanFilename(filename) {
   let base = name.slice(0, dotIdx).replace(/\s*\(\d+\)$/, "").replace(/[\[\]\(\)\{\}]/g, " ");
   let epTag = "";
 
-  base = base.replace(/^EP((\.d+)+)\./i, (_, grp) => {
+  base = base.replace(/^EP((?:\.\d+)+)\./i, (_, grp) => {
     const nums = grp.split(".").filter(Boolean).map((n) => String(n).padStart(2, "0"));
     epTag = nums[0] === nums.at(-1) ? `EP${nums[0]}` : `EP${nums[0]}-${nums.at(-1)}`;
     return "";
